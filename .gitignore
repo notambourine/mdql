@@ -1,0 +1,8 @@
+bin/
+mdql
+mdql.exe
+.mdql/
+*.test
+*.out
+coverage.txt
+.DS_Store
