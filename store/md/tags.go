@@ -2,7 +2,6 @@ package md
 
 import (
 	"context"
-	"path/filepath"
 	"sort"
 )
 
@@ -39,11 +38,7 @@ func (s *Store) RemoveTag(ctx context.Context, kind, slug, tag string) error {
 func (s *Store) ListTags(ctx context.Context) ([]TagCount, error) {
 	counts := make(map[string]int)
 	for kind := range s.schema.Entities {
-		dir, err := s.EntityDir(kind)
-		if err != nil {
-			return nil, err
-		}
-		err = walkEntities(dir, func(path string, front, body []byte) error {
+		err := s.ForEachEntity(kind, func(slug, path string, front, body []byte) error {
 			if err := ctxErr(ctx); err != nil {
 				return err
 			}
@@ -86,18 +81,14 @@ func (s *Store) TagsFor(ctx context.Context, kind, slug string) ([]string, error
 func (s *Store) DeleteTag(ctx context.Context, tag string) (int, error) {
 	modified := 0
 	for kind := range s.schema.Entities {
-		dir, err := s.EntityDir(kind)
-		if err != nil {
-			return modified, err
-		}
 		var slugs []string
-		err = walkEntities(dir, func(path string, front, body []byte) error {
+		err := s.ForEachEntity(kind, func(slug, path string, front, body []byte) error {
 			if err := ctxErr(ctx); err != nil {
 				return err
 			}
 			for _, t := range extractTags(front) {
 				if t == tag {
-					slugs = append(slugs, slugFromPath(path))
+					slugs = append(slugs, slug)
 					return nil
 				}
 			}
@@ -121,11 +112,7 @@ func (s *Store) DeleteTag(ctx context.Context, tag string) (int, error) {
 func (s *Store) CountTagUsage(ctx context.Context, tag string) (int, error) {
 	count := 0
 	for kind := range s.schema.Entities {
-		dir, err := s.EntityDir(kind)
-		if err != nil {
-			return count, err
-		}
-		err = walkEntities(dir, func(path string, front, body []byte) error {
+		err := s.ForEachEntity(kind, func(slug, path string, front, body []byte) error {
 			if err := ctxErr(ctx); err != nil {
 				return err
 			}
@@ -173,11 +160,6 @@ func extractTags(front []byte) []string {
 	}
 	_ = decodeInto(front, &doc)
 	return doc.Tags
-}
-
-func slugFromPath(path string) string {
-	name := filepath.Base(path)
-	return name[:len(name)-len(".md")]
 }
 
 func stringSlicesEqual(a, b []string) bool {

@@ -9,12 +9,29 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/notambourine/mdql/schema"
 )
 
-// walkEntities iterates the .md files in dir, calling visit for each.
-// A missing directory is treated as empty (no error). Non-.md files and
-// subdirectories are skipped.
-func walkEntities(dir string, visit func(path string, front, body []byte) error) error {
+// EntityVisitor is the callback invoked by ForEachEntity per record.
+// slug is the canonical id (folder name for sprawl, filename sans ".md"
+// for flat). path is the absolute path to the canonical frontmatter
+// document (`index.md` for sprawl, `{slug}.md` for flat).
+type EntityVisitor func(slug, path string, front, body []byte) error
+
+// ForEachEntity invokes visit once per record of kind in sorted slug
+// order. Sprawl entities are enumerated by reading immediate subfolders
+// of the entity dir and loading each `index.md`; flat entities keep the
+// legacy .md-file iteration. A missing entity dir is treated as empty.
+//
+// Exposed so callers outside the md package (wiki, lint) can iterate
+// records without reimplementing sprawl vs flat path resolution.
+func (s *Store) ForEachEntity(kind string, visit EntityVisitor) error {
+	entity, ok := s.schema.Entities[kind]
+	if !ok {
+		return fmt.Errorf("unknown entity kind %q", kind)
+	}
+	dir := filepath.Join(s.root, entity.Dir)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -25,19 +42,38 @@ func walkEntities(dir string, visit func(path string, front, body []byte) error)
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+		slug, path, ok := entityCandidate(entity, dir, entry)
+		if !ok {
 			continue
 		}
-		path := filepath.Join(dir, entry.Name())
 		front, body, err := Parse(path)
 		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
 			return fmt.Errorf("parse %s: %w", path, err)
 		}
-		if err := visit(path, front, body); err != nil {
+		if err := visit(slug, path, front, body); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// entityCandidate maps a directory entry to (slug, canonical-path, ok).
+// Sprawl: a subfolder with an index.md. Flat: any *.md file.
+func entityCandidate(entity schema.Entity, dir string, entry os.DirEntry) (string, string, bool) {
+	if entity.IsSprawl() {
+		if !entry.IsDir() {
+			return "", "", false
+		}
+		return entry.Name(), filepath.Join(dir, entry.Name(), "index.md"), true
+	}
+	if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+		return "", "", false
+	}
+	name := entry.Name()
+	return name[:len(name)-len(".md")], filepath.Join(dir, name), true
 }
 
 // decodeInto YAML-decodes front into v. Zero-length input is a no-op so

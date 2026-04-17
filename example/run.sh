@@ -125,9 +125,11 @@ capture 71-issue-help.out               issue --help
 capture 72-issue-add-help.out           issue add --help
 
 # ── on-disk shape ────────────────────────────────────────────────────
-capture_file 80-file-person-ana.out people/ana-ray.md
-capture_file 81-file-project.out    projects/launch-site.md
-capture_file 82-file-issue.out      issues/write-landing-copy.md
+# Sprawl layout: {dir}/{slug}/index.md is the canonical frontmatter file;
+# sibling files (meetings, decisions, notes) can live alongside it.
+capture_file 80-file-person-ana.out people/ana-ray/index.md
+capture_file 81-file-project.out    projects/launch-site/index.md
+capture_file 82-file-issue.out      issues/write-landing-copy/index.md
 
 # tree — on-disk store shape (schema + entity dirs + archive). Excludes
 # runtime index, goldens, harness files so the same tree renders in both
@@ -140,6 +142,7 @@ capture_file 82-file-issue.out      issues/write-landing-copy.md
         -not -name 'run.sh' \
         -not -name 'README.md' \
         -not -name '.gitignore' \
+        -not -name '.DS_Store' \
         | sort )
 } > "$OUT/83-tree.out"
 

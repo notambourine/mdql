@@ -75,3 +75,28 @@ func newTestStore(t *testing.T) *Store {
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
+
+// flatFixtureYAML has one entity declared `flat: true` so path-assertion
+// tests can exercise the sprawl-opt-out branch.
+const flatFixtureYAML = `
+version: 1
+entities:
+  tag:
+    dir: tags
+    flat: true
+    title: "{{.name}}"
+    slug:  "{{.name}}"
+    fields:
+      name: {type: string, required: true}
+`
+
+func newFlatTestStore(t *testing.T) *Store {
+	t.Helper()
+	root := t.TempDir()
+	sch := mustParseSchema(t, flatFixtureYAML)
+	require.NoError(t, Init(root, sch))
+	s, err := Open(root, sch, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}

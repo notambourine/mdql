@@ -21,14 +21,18 @@ type schemaDescription struct {
 }
 
 type entityDescription struct {
-	Dir               string                  `json:"dir"`
-	Title             string                  `json:"title"`
-	Slug              string                  `json:"slug"`
-	Archivable        bool                    `json:"archivable"`
-	AppendOnly        bool                    `json:"append_only"`
-	FrontmatterFields map[string]fieldView    `json:"frontmatter_fields"`
-	SubFiles          map[string]fieldView    `json:"sub_files"`
-	Commands          []string                `json:"commands"`
+	Dir               string               `json:"dir"`
+	Title             string               `json:"title"`
+	Slug              string               `json:"slug"`
+	Archivable        bool                 `json:"archivable"`
+	AppendOnly        bool                 `json:"append_only"`
+	// Sprawl reports the on-disk layout: true = `{dir}/{slug}/index.md`
+	// with free-form sibling files, false = single `{dir}/{slug}.md`.
+	// Sprawl is the default; a schema entity opts out with `flat: true`.
+	Sprawl            bool                 `json:"sprawl"`
+	FrontmatterFields map[string]fieldView `json:"frontmatter_fields"`
+	SubFiles          map[string]fieldView `json:"sub_files"`
+	Commands          []string             `json:"commands"`
 }
 
 // fieldView mirrors schema.Field but with omitempty so the JSON stays
@@ -71,6 +75,7 @@ func describeSchema(s *schema.Schema) schemaDescription {
 			Slug:              entity.Slug,
 			Archivable:        entity.IsArchivable(),
 			AppendOnly:        entity.AppendOnly,
+			Sprawl:            entity.IsSprawl(),
 			FrontmatterFields: convertFields(entity.Fields),
 			SubFiles:          map[string]fieldView{}, // populated in commit 3 once files: parses
 			Commands:          entityCommands(entity),

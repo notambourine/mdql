@@ -57,11 +57,31 @@ func (s *Store) EntityDir(kind string) (string, error) {
 	return filepath.Join(s.root, entity.Dir), nil
 }
 
-// EntityPath returns the absolute file path for a slug of the given kind.
+// EntityPath returns the absolute file path of the canonical frontmatter
+// document for a slug of the given kind. Sprawl entities resolve to
+// `{dir}/{slug}/index.md`; flat entities resolve to `{dir}/{slug}.md`.
 func (s *Store) EntityPath(kind, slug string) (string, error) {
-	dir, err := s.EntityDir(kind)
-	if err != nil {
-		return "", err
+	entity, ok := s.schema.Entities[kind]
+	if !ok {
+		return "", fmt.Errorf("unknown entity kind %q", kind)
+	}
+	dir := filepath.Join(s.root, entity.Dir)
+	if entity.IsSprawl() {
+		return filepath.Join(dir, slug, "index.md"), nil
 	}
 	return filepath.Join(dir, slug+".md"), nil
+}
+
+// EntityFolder returns the absolute folder that holds all files for a
+// sprawl entity (`{dir}/{slug}/`). Returns ("", false, nil) for flat
+// entities.
+func (s *Store) EntityFolder(kind, slug string) (string, bool, error) {
+	entity, ok := s.schema.Entities[kind]
+	if !ok {
+		return "", false, fmt.Errorf("unknown entity kind %q", kind)
+	}
+	if !entity.IsSprawl() {
+		return "", false, nil
+	}
+	return filepath.Join(s.root, entity.Dir, slug), true, nil
 }

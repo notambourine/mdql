@@ -42,12 +42,27 @@ var ErrEmptySlug = errors.New("cannot generate slug from input")
 // the same suffix — the caller is responsible for using atomic creation
 // (O_CREATE|O_EXCL) to break ties.
 func EnsureUnique(dir, slug string) (string, error) {
+	return ensureUniqueBy(slug, func(candidate string) string {
+		return filepath.Join(dir, candidate+".md")
+	})
+}
+
+// EnsureUniqueFolder is the sprawl-mode sibling of EnsureUnique: checks
+// for subfolder collisions under dir. If `dir/jane-smith/` exists,
+// returns "jane-smith-2"; etc.
+func EnsureUniqueFolder(dir, slug string) (string, error) {
+	return ensureUniqueBy(slug, func(candidate string) string {
+		return filepath.Join(dir, candidate)
+	})
+}
+
+func ensureUniqueBy(slug string, pathFor func(string) string) (string, error) {
 	if slug == "" {
 		return "", ErrEmptySlug
 	}
 	candidate := slug
 	for i := 2; ; i++ {
-		path := filepath.Join(dir, candidate+".md")
+		path := pathFor(candidate)
 		_, err := os.Stat(path)
 		if os.IsNotExist(err) {
 			return candidate, nil

@@ -80,7 +80,7 @@ func TestCreateRoundtrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "jane-smith", rec["id"])
 
-	path := filepath.Join(s.Root(), "people", "jane-smith.md")
+	path := filepath.Join(s.Root(), "people", "jane-smith", "index.md")
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), "first_name: Jane")
@@ -237,9 +237,9 @@ func TestArchiveEntityRemovesFromIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, s.ArchiveEntity(ctx, "person", "jane"))
-	_, err = os.Stat(filepath.Join(s.Root(), "people", "jane.md"))
-	assert.True(t, os.IsNotExist(err))
-	_, err = os.Stat(filepath.Join(s.Root(), s.Schema().Store.ArchiveDir, "people", "jane.md"))
+	_, err = os.Stat(filepath.Join(s.Root(), "people", "jane"))
+	assert.True(t, os.IsNotExist(err), "sprawl folder should be gone after archive")
+	_, err = os.Stat(filepath.Join(s.Root(), s.Schema().Store.ArchiveDir, "people", "jane", "index.md"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"person:jane"}, idx.removed)
 }

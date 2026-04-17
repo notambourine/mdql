@@ -11,8 +11,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // fixtureSchema is the CRM-shaped schema the integration tests run
@@ -184,9 +182,10 @@ func TestPersonRoundtrip(t *testing.T) {
 		t.Errorf("slug = %v, want jane-smith", added[0]["id"])
 	}
 
-	path := filepath.Join(root, "people", "jane-smith.md")
+	folder := filepath.Join(root, "people", "jane-smith")
+	path := filepath.Join(folder, "index.md")
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("file not written: %v", err)
+		t.Fatalf("index.md not written: %v", err)
 	}
 
 	mustRun(t, root, "person", "update", "jane-smith", "--email", "jane@new.example.com")
@@ -198,12 +197,12 @@ func TestPersonRoundtrip(t *testing.T) {
 	}
 
 	mustRun(t, root, "person", "archive", "jane-smith")
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Errorf("file still exists after archive: %v", err)
+	if _, err := os.Stat(folder); !os.IsNotExist(err) {
+		t.Errorf("sprawl folder still exists after archive: %v", err)
 	}
-	archived := filepath.Join(root, "_archive", "people", "jane-smith.md")
+	archived := filepath.Join(root, "_archive", "people", "jane-smith", "index.md")
 	if _, err := os.Stat(archived); err != nil {
-		t.Errorf("archived file missing: %v", err)
+		t.Errorf("archived index.md missing: %v", err)
 	}
 }
 
@@ -318,13 +317,14 @@ func TestRenameSurfacesDanglingLinks(t *testing.T) {
 		"--body", "Ref [[jane-smith]].",
 	)
 
-	// Rename the file and rewrite its frontmatter id. mdql has no
-	// rename command — we emulate the out-of-band edit that any real
-	// user would do (e.g. git mv + hand-edit), then confirm the wiki
-	// check surfaces the now-broken reference.
-	oldPath := filepath.Join(root, "people", "jane-smith.md")
-	newPath := filepath.Join(root, "people", "jane-smith-renamed.md")
-	rewriteID(t, oldPath, newPath, "jane-smith-renamed")
+	// Rename the sprawl folder. mdql has no rename command — we emulate
+	// the out-of-band edit that any real user would do (e.g. git mv),
+	// then confirm the wiki check surfaces the now-broken reference.
+	oldFolder := filepath.Join(root, "people", "jane-smith")
+	newFolder := filepath.Join(root, "people", "jane-smith-renamed")
+	if err := os.Rename(oldFolder, newFolder); err != nil {
+		t.Fatalf("rename sprawl folder: %v", err)
+	}
 
 	dangling := mustRun(t, root, "--format", "json", "wiki", "dangling").stdout
 	if !strings.Contains(dangling, `"target_slug":"jane-smith"`) {
@@ -567,7 +567,7 @@ func TestNoAutoInjectedFrontmatterFields(t *testing.T) {
 		"--first-name", "Jane", "--last-name", "Smith",
 		"--email", "jane@example.com")
 
-	raw, err := os.ReadFile(filepath.Join(root, "people", "jane-smith.md"))
+	raw, err := os.ReadFile(filepath.Join(root, "people", "jane-smith", "index.md"))
 	if err != nil {
 		t.Fatalf("read written file: %v", err)
 	}
@@ -575,41 +575,6 @@ func TestNoAutoInjectedFrontmatterFields(t *testing.T) {
 		if strings.Contains(string(raw), banned) {
 			t.Errorf("frontmatter still contains %q (should be filename-derived):\n%s", banned, raw)
 		}
-	}
-}
-
-// rewriteID renames oldPath to newPath and rewrites the id frontmatter
-// key to newID. Used by TestRenameSurfacesDanglingLinks to simulate an
-// out-of-band file rename that mdql itself does not offer as a command.
-func rewriteID(t *testing.T, oldPath, newPath, newID string) {
-	t.Helper()
-	raw, err := os.ReadFile(oldPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", oldPath, err)
-	}
-	front, body, ok := bytes.Cut(raw[len("---\n"):], []byte("---\n"))
-	if !ok {
-		t.Fatalf("unterminated frontmatter in %s", oldPath)
-	}
-	var fm map[string]any
-	if err := yaml.Unmarshal(front, &fm); err != nil {
-		t.Fatalf("parse frontmatter: %v", err)
-	}
-	fm["id"] = newID
-	newFront, err := yaml.Marshal(fm)
-	if err != nil {
-		t.Fatalf("encode frontmatter: %v", err)
-	}
-	var buf bytes.Buffer
-	buf.WriteString("---\n")
-	buf.Write(newFront)
-	buf.WriteString("---\n")
-	buf.Write(body)
-	if err := os.WriteFile(newPath, buf.Bytes(), 0o644); err != nil {
-		t.Fatalf("write %s: %v", newPath, err)
-	}
-	if err := os.Remove(oldPath); err != nil {
-		t.Fatalf("remove %s: %v", oldPath, err)
 	}
 }
 

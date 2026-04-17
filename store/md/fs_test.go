@@ -54,11 +54,29 @@ func TestInitPreservesExistingGitignore(t *testing.T) {
 	assert.Equal(t, custom, string(got))
 }
 
-func TestEntityPath(t *testing.T) {
+func TestEntityPathSprawl(t *testing.T) {
 	s := newTestStore(t)
 	p, err := s.EntityPath("person", "jane-smith")
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(s.Root(), "people", "jane-smith.md"), p)
+	assert.Equal(t, filepath.Join(s.Root(), "people", "jane-smith", "index.md"), p)
+
+	folder, sprawl, err := s.EntityFolder("person", "jane-smith")
+	require.NoError(t, err)
+	assert.True(t, sprawl)
+	assert.Equal(t, filepath.Join(s.Root(), "people", "jane-smith"), folder)
+}
+
+// TestEntityPathFlat pins the `flat: true` escape hatch: entities that
+// opt out of sprawl keep the legacy single-file layout.
+func TestEntityPathFlat(t *testing.T) {
+	s := newFlatTestStore(t)
+	p, err := s.EntityPath("tag", "vip")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(s.Root(), "tags", "vip.md"), p)
+
+	_, sprawl, err := s.EntityFolder("tag", "vip")
+	require.NoError(t, err)
+	assert.False(t, sprawl)
 }
 
 func TestEntityPathUnknownKind(t *testing.T) {

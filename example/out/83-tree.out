@@ -1,8 +1,8 @@
 ---tree---
-./_archive/issues/add-analytics.md
-./issues/fix-nav-overflow.md
-./issues/write-landing-copy.md
-./people/ana-ray.md
-./people/bob-quinn.md
-./projects/launch-site.md
+./_archive/issues/add-analytics/index.md
+./issues/fix-nav-overflow/index.md
+./issues/write-landing-copy/index.md
+./people/ana-ray/index.md
+./people/bob-quinn/index.md
+./projects/launch-site/index.md
 ./schema.yml

@@ -30,7 +30,12 @@ type Entity struct {
 	Slug       string           `yaml:"slug"`
 	Archivable *bool            `yaml:"archivable"`
 	AppendOnly bool             `yaml:"append_only"`
-	Fields     map[string]Field `yaml:"fields"`
+	// Flat opts out of sprawl: when true, the entity stores one file per
+	// record at `{dir}/{slug}.md` instead of a folder per record at
+	// `{dir}/{slug}/index.md`. Default is sprawl; `flat: true` is the
+	// escape hatch for entity kinds that will never grow sub-files.
+	Flat   bool             `yaml:"flat"`
+	Fields map[string]Field `yaml:"fields"`
 }
 
 // IsArchivable returns the effective archivable flag (default true).
@@ -40,6 +45,10 @@ func (e Entity) IsArchivable() bool {
 	}
 	return *e.Archivable
 }
+
+// IsSprawl reports whether the entity uses folder-per-record layout.
+// Default is sprawl; opt out with `flat: true` in the schema.
+func (e Entity) IsSprawl() bool { return !e.Flat }
 
 // Field describes one frontmatter attribute on an entity.
 type Field struct {

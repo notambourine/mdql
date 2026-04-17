@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -61,14 +60,17 @@ func (s *Store) Create(ctx context.Context, kind string, input map[string]any) (
 	if err != nil {
 		return nil, err
 	}
-	slug, err := ensureUniqueAtomic(dir, baseSlug)
+	slug, err := ensureUniqueSlug(dir, baseSlug, entity.IsSprawl())
 	if err != nil {
 		return nil, err
 	}
 
 	rec["id"] = slug
 
-	path := filepath.Join(dir, slug+".md")
+	path, err := s.EntityPath(kind, slug)
+	if err != nil {
+		return nil, err
+	}
 	if err := writeEntity(path, frontmatterOnly(rec), body); err != nil {
 		return nil, err
 	}
@@ -92,7 +94,7 @@ func (s *Store) Get(ctx context.Context, kind, slug string) (map[string]any, err
 	if err != nil {
 		return nil, err
 	}
-	return s.readMap(path)
+	return s.readMap(kind, slug, path)
 }
 
 // List returns every entity of kind that matches filters, sorted by
@@ -105,12 +107,8 @@ func (s *Store) List(ctx context.Context, kind string, filters map[string]any) (
 	if err := ctxErr(ctx); err != nil {
 		return nil, err
 	}
-	dir, err := s.EntityDir(kind)
-	if err != nil {
-		return nil, err
-	}
 	var out []map[string]any
-	err = walkEntities(dir, func(path string, front, body []byte) error {
+	err := s.ForEachEntity(kind, func(slug, path string, front, body []byte) error {
 		if err := ctxErr(ctx); err != nil {
 			return err
 		}
@@ -118,7 +116,7 @@ func (s *Store) List(ctx context.Context, kind string, filters map[string]any) (
 		if err != nil {
 			return fmt.Errorf("decode %s: %w", path, err)
 		}
-		rec["id"] = slugFromPath(path)
+		rec["id"] = slug
 		rec[bodyKey] = string(body)
 		if !matchFilters(rec, filters) {
 			return nil
@@ -150,7 +148,7 @@ func (s *Store) Update(ctx context.Context, kind, slug string, patch map[string]
 	if err != nil {
 		return nil, err
 	}
-	rec, err := s.readMap(path)
+	rec, err := s.readMap(kind, slug, path)
 	if err != nil {
 		return nil, err
 	}
@@ -201,14 +199,15 @@ func (s *Store) ArchiveEntity(ctx context.Context, kind, slug string) error {
 	return s.indexer.Remove(kind + ":" + slug)
 }
 
-// readMap is the map[string]any version of readEntity. Injects `id`
-// from the filename so callers can rely on rec["id"] without it being
-// stored in frontmatter.
-func (s *Store) readMap(path string) (map[string]any, error) {
+// readMap loads the frontmatter + body at path into a generic map and
+// sets rec["id"] = slug. Callers that know the slug (Get, Update) pass
+// it in directly so the map-level id is authoritative regardless of
+// sprawl vs flat layout.
+func (s *Store) readMap(kind, slug, path string) (map[string]any, error) {
 	front, body, err := Parse(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("%s: %w", filepath.Base(path), model.ErrNotFound)
+			return nil, fmt.Errorf("%s/%s: %w", kind, slug, model.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -216,7 +215,7 @@ func (s *Store) readMap(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	rec["id"] = slugFromPath(path)
+	rec["id"] = slug
 	rec[bodyKey] = string(body)
 	return rec, nil
 }
@@ -244,21 +243,16 @@ func (s *Store) checkUnique(ctx context.Context, kind string, entity schema.Enti
 	if len(uniqueFields) == 0 {
 		return nil
 	}
-	dir, err := s.EntityDir(kind)
-	if err != nil {
-		return err
-	}
-	return walkEntities(dir, func(path string, front, body []byte) error {
+	return s.ForEachEntity(kind, func(slug, path string, front, body []byte) error {
 		if err := ctxErr(ctx); err != nil {
 			return err
+		}
+		if excludeSlug != "" && slug == excludeSlug {
+			return nil
 		}
 		existing, err := decodeMap(front)
 		if err != nil {
 			return err
-		}
-		existing["id"] = slugFromPath(path)
-		if excludeSlug != "" && asString(existing["id"]) == excludeSlug {
-			return nil
 		}
 		for _, fname := range uniqueFields {
 			a := asString(rec[fname])
@@ -358,7 +352,10 @@ func matchFilters(rec map[string]any, filters map[string]any) bool {
 	return true
 }
 
-func ensureUniqueAtomic(dir, base string) (string, error) {
+func ensureUniqueSlug(dir, base string, sprawl bool) (string, error) {
+	if sprawl {
+		return EnsureUniqueFolder(dir, base)
+	}
 	return EnsureUnique(dir, base)
 }
 
