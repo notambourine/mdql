@@ -44,14 +44,18 @@ func Backlinks(idx *search.Index, slug string) ([]Ref, error) {
 // Orphans returns entities whose slug appears nowhere in other entities'
 // links. An orphan is a node with no inbound references.
 //
-// Interactions are always "attached" via their people field, so we skip
-// them — an orphan interaction is a meaningful concept only if it has
-// zero people, which is already surfaced by listing interactions.
+// Skips entities declared append_only in the schema: those (e.g. an
+// interaction log) are "attached" via their own link fields, so an
+// orphan here would be a meaningful concept only when the entity has
+// zero links, which is already surfaced by listing it directly.
 func Orphans(ctx context.Context, s *md.Store, idx *search.Index) ([]Ref, error) {
-	kinds := []string{md.KindPerson, md.KindOrg, md.KindDeal, md.KindTask}
+	_ = ctx
 	var orphans []Ref
-	for _, kind := range kinds {
-		dir, err := md.EntityDir(s.Root(), kind)
+	for kind, entity := range s.Schema().Entities {
+		if entity.AppendOnly {
+			continue
+		}
+		dir, err := s.EntityDir(kind)
 		if err != nil {
 			return nil, err
 		}
@@ -83,12 +87,12 @@ func Orphans(ctx context.Context, s *md.Store, idx *search.Index) ([]Ref, error)
 }
 
 // Check scans every entity for [[slug]] references and reports any whose
-// target file doesn't exist in the expected directories.
+// target file doesn't exist in any schema-declared entity directory.
 func Check(ctx context.Context, s *md.Store) ([]Dangling, error) {
-	root := s.Root()
+	_ = ctx
 	known := map[string]map[string]struct{}{}
-	for kind, dir := range md.Dirs {
-		fullDir := filepath.Join(root, dir)
+	for kind, entity := range s.Schema().Entities {
+		fullDir := filepath.Join(s.Root(), entity.Dir)
 		set := map[string]struct{}{}
 		entries, err := os.ReadDir(fullDir)
 		if err != nil && !os.IsNotExist(err) {
@@ -114,8 +118,8 @@ func Check(ctx context.Context, s *md.Store) ([]Dangling, error) {
 	}
 
 	var dangling []Dangling
-	for kind, dir := range md.Dirs {
-		fullDir := filepath.Join(root, dir)
+	for kind, entity := range s.Schema().Entities {
+		fullDir := filepath.Join(s.Root(), entity.Dir)
 		err := walkLinks(fullDir, func(sourceSlug string, links []string) {
 			for _, target := range links {
 				if !slugExists(target) {

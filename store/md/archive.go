@@ -10,14 +10,14 @@ import (
 // ErrNotArchivable is returned when the source file does not exist.
 var ErrNotArchivable = errors.New("entity file not found")
 
-// Archive moves root/<kind-dir>/<slug>.md to root/_archive/<kind-dir>/<slug>.md.
+// Archive moves <kind-dir>/<slug>.md to <archive>/<kind-dir>/<slug>.md.
 // Git records this as a rename, so the soft-delete is diff-friendly.
 //
 // Returns ErrNotArchivable wrapped when the source doesn't exist, so
 // callers can distinguish "already archived / never existed" from I/O
 // errors.
-func Archive(root, kind, slug string) error {
-	src, err := EntityPath(root, kind, slug)
+func (s *Store) Archive(kind, slug string) error {
+	src, err := s.EntityPath(kind, slug)
 	if err != nil {
 		return err
 	}
@@ -28,11 +28,11 @@ func Archive(root, kind, slug string) error {
 		return fmt.Errorf("stat %s: %w", src, err)
 	}
 
-	kindDir, ok := Dirs[kind]
+	entity, ok := s.schema.Entities[kind]
 	if !ok {
 		return fmt.Errorf("unknown entity kind %q", kind)
 	}
-	dstDir := filepath.Join(root, ArchiveDir, kindDir)
+	dstDir := filepath.Join(s.root, s.schema.Store.ArchiveDir, entity.Dir)
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir archive dir: %w", err)
 	}
@@ -44,17 +44,18 @@ func Archive(root, kind, slug string) error {
 	return nil
 }
 
-// Restore is the inverse of Archive: moves the file back out of _archive/.
-func Restore(root, kind, slug string) error {
-	dst, err := EntityPath(root, kind, slug)
+// Restore is the inverse of Archive: moves the file back out of the
+// archive tree.
+func (s *Store) Restore(kind, slug string) error {
+	dst, err := s.EntityPath(kind, slug)
 	if err != nil {
 		return err
 	}
-	kindDir, ok := Dirs[kind]
+	entity, ok := s.schema.Entities[kind]
 	if !ok {
 		return fmt.Errorf("unknown entity kind %q", kind)
 	}
-	src := filepath.Join(root, ArchiveDir, kindDir, slug+".md")
+	src := filepath.Join(s.root, s.schema.Store.ArchiveDir, entity.Dir, slug+".md")
 	if _, err := os.Stat(src); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("archive/%s/%s: %w", kind, slug, ErrNotArchivable)

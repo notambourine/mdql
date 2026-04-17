@@ -11,40 +11,43 @@ import (
 
 func TestInit(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, Init(root))
+	sch := fixtureSchema(t)
+	require.NoError(t, Init(root, sch))
 
-	for _, dir := range Dirs {
-		info, err := os.Stat(filepath.Join(root, dir))
+	for _, entity := range sch.Entities {
+		info, err := os.Stat(filepath.Join(root, entity.Dir))
 		require.NoError(t, err)
-		assert.True(t, info.IsDir(), "%s should exist as dir", dir)
+		assert.True(t, info.IsDir(), "%s should exist as dir", entity.Dir)
 
-		info, err = os.Stat(filepath.Join(root, ArchiveDir, dir))
+		info, err = os.Stat(filepath.Join(root, sch.Store.ArchiveDir, entity.Dir))
 		require.NoError(t, err)
-		assert.True(t, info.IsDir(), "archive/%s should exist as dir", dir)
+		assert.True(t, info.IsDir(), "archive/%s should exist as dir", entity.Dir)
 	}
 
-	info, err := os.Stat(filepath.Join(root, RuntimeDir))
+	info, err := os.Stat(filepath.Join(root, sch.Store.RuntimeDir))
 	require.NoError(t, err)
 	assert.True(t, info.IsDir())
 
 	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	require.NoError(t, err)
-	assert.Contains(t, string(gitignore), RuntimeDir)
+	assert.Contains(t, string(gitignore), sch.Store.RuntimeDir)
 }
 
 func TestInitIdempotent(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, Init(root))
-	require.NoError(t, Init(root))
+	sch := fixtureSchema(t)
+	require.NoError(t, Init(root, sch))
+	require.NoError(t, Init(root, sch))
 }
 
 func TestInitPreservesExistingGitignore(t *testing.T) {
 	root := t.TempDir()
+	sch := fixtureSchema(t)
 	require.NoError(t, os.MkdirAll(root, 0o755))
 	custom := "my-custom-rules\n"
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte(custom), 0o644))
 
-	require.NoError(t, Init(root))
+	require.NoError(t, Init(root, sch))
 
 	got, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	require.NoError(t, err)
@@ -52,13 +55,14 @@ func TestInitPreservesExistingGitignore(t *testing.T) {
 }
 
 func TestEntityPath(t *testing.T) {
-	root := t.TempDir()
-	p, err := EntityPath(root, KindPerson, "jane-smith")
+	s := newTestStore(t)
+	p, err := s.EntityPath("person", "jane-smith")
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(root, "people", "jane-smith.md"), p)
+	assert.Equal(t, filepath.Join(s.Root(), "people", "jane-smith.md"), p)
 }
 
 func TestEntityPathUnknownKind(t *testing.T) {
-	_, err := EntityPath(t.TempDir(), "alien", "whatever")
+	s := newTestStore(t)
+	_, err := s.EntityPath("alien", "whatever")
 	assert.Error(t, err)
 }
