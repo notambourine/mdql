@@ -2,7 +2,6 @@ package md
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,8 +10,6 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/notambourine/mdql/model"
 )
 
 // nowRFC3339 returns the current UTC time formatted as RFC3339.
@@ -89,23 +86,6 @@ func writeEntity(path string, v any, body string) error {
 		return err
 	}
 	return Write(path, front, []byte(body))
-}
-
-// readEntity parses path into v and returns the body.
-// Missing files are surfaced as model.ErrNotFound so callers can classify
-// the error uniformly.
-func readEntity(path string, v any) (body string, err error) {
-	front, bodyBytes, err := Parse(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("%s: %w", filepath.Base(path), model.ErrNotFound)
-		}
-		return "", err
-	}
-	if err := decodeInto(front, v); err != nil {
-		return "", err
-	}
-	return string(bodyBytes), nil
 }
 
 // sortedDedup returns a sorted copy of xs with duplicates removed.
