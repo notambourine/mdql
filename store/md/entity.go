@@ -60,6 +60,19 @@ func decodeInto(front []byte, v any) error {
 	return nil
 }
 
+// decodeMap YAML-decodes front into a generic map. The generic entity
+// layer uses this to avoid per-kind struct types.
+func decodeMap(front []byte) (map[string]any, error) {
+	out := map[string]any{}
+	if len(front) == 0 {
+		return out, nil
+	}
+	if err := yaml.Unmarshal(front, &out); err != nil {
+		return nil, fmt.Errorf("decode frontmatter: %w", err)
+	}
+	return out, nil
+}
+
 // encodeFrontmatter YAML-encodes v for writing.
 func encodeFrontmatter(v any) ([]byte, error) {
 	buf, err := yaml.Marshal(v)

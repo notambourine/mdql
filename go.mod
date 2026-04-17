@@ -32,6 +32,7 @@ require (
 	github.com/blevesearch/zapx/v16 v16.2.8 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/json-iterator/go v0.0.0-20171115153421-f7279a603ede // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect

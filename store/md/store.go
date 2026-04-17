@@ -61,14 +61,25 @@ func (s *Store) Indexer() store.Indexer { return s.indexer }
 func (s *Store) Close() error { return nil }
 
 // Reindex walks every schema entity and pushes each record to the
-// indexer. The generic List call lands in step 7; until then this is a
-// no-op that reports zero counts per kind so callers can wire the
-// cobra command without waiting for step 7.
+// indexer. Returns counts per kind.
 func (s *Store) Reindex(ctx context.Context) (ReindexStats, error) {
-	_ = ctx
 	stats := ReindexStats{ByKind: map[string]int{}}
-	for kind := range s.schema.Entities {
-		stats.ByKind[kind] = 0
+	for kind, entity := range s.schema.Entities {
+		records, err := s.List(ctx, kind, nil)
+		if err != nil {
+			return stats, err
+		}
+		for _, rec := range records {
+			body, _ := rec[bodyKey].(string)
+			doc, err := entityDoc(kind, entity, rec, body)
+			if err != nil {
+				return stats, fmt.Errorf("build doc %s/%s: %w", kind, rec["id"], err)
+			}
+			if err := s.indexer.Upsert(doc); err != nil {
+				return stats, fmt.Errorf("index %s/%s: %w", kind, rec["id"], err)
+			}
+			stats.ByKind[kind]++
+		}
 	}
 	return stats, nil
 }

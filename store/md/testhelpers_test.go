@@ -53,7 +53,14 @@ entities:
 // fresh *Schema (cheap; Parse allocates a few maps).
 func fixtureSchema(t *testing.T) *schema.Schema {
 	t.Helper()
-	s, err := schema.Parse([]byte(fixtureSchemaYAML))
+	return mustParseSchema(t, fixtureSchemaYAML)
+}
+
+// mustParseSchema parses yml, failing the test on error. Shared by
+// tests that need a different fixture than fixtureSchemaYAML.
+func mustParseSchema(t *testing.T, yml string) *schema.Schema {
+	t.Helper()
+	s, err := schema.Parse([]byte(yml))
 	require.NoError(t, err)
 	return s
 }
