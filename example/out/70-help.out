@@ -11,6 +11,7 @@ Available Commands:
   issue       manage issue
   person      manage person
   project     manage project
+  schema      schema introspection
   search      full-text search
   tag         manage tags
   wiki        wiki graph queries

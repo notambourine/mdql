@@ -19,8 +19,8 @@ type Schema struct {
 
 // StoreConfig controls where mdql keeps derived state on disk.
 type StoreConfig struct {
-	RuntimeDir string `yaml:"runtime_dir"`
-	ArchiveDir string `yaml:"archive_dir"`
+	RuntimeDir string `yaml:"runtime_dir" json:"runtime_dir"`
+	ArchiveDir string `yaml:"archive_dir" json:"archive_dir"`
 }
 
 // Entity is one schema-defined record kind (e.g. person, deal).

@@ -9,8 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"github.com/notambourine/mdql/model"
 	"github.com/notambourine/mdql/schema"
 )
@@ -68,16 +66,10 @@ func (s *Store) Create(ctx context.Context, kind string, input map[string]any) (
 		return nil, err
 	}
 
-	now := nowRFC3339()
 	rec["id"] = slug
-	if _, ok := rec["uuid"].(string); !ok {
-		rec["uuid"] = uuid.New().String()
-	}
-	rec["created_at"] = now
-	rec["updated_at"] = now
 
 	path := filepath.Join(dir, slug+".md")
-	if err := writeEntity(path, rec, body); err != nil {
+	if err := writeEntity(path, frontmatterOnly(rec), body); err != nil {
 		return nil, err
 	}
 	doc, err := entityDoc(kind, entity, rec, body)
@@ -126,6 +118,7 @@ func (s *Store) List(ctx context.Context, kind string, filters map[string]any) (
 		if err != nil {
 			return fmt.Errorf("decode %s: %w", path, err)
 		}
+		rec["id"] = slugFromPath(path)
 		rec[bodyKey] = string(body)
 		if !matchFilters(rec, filters) {
 			return nil
@@ -144,7 +137,7 @@ func (s *Store) List(ctx context.Context, kind string, filters map[string]any) (
 
 // Update applies patch fields to the existing record. Keys whose value
 // is nil are removed from the record; everything else overwrites. The
-// body key is applied as the body. updated_at is bumped.
+// body key is applied as the body.
 func (s *Store) Update(ctx context.Context, kind, slug string, patch map[string]any) (map[string]any, error) {
 	if err := ctxErr(ctx); err != nil {
 		return nil, err
@@ -176,12 +169,11 @@ func (s *Store) Update(ctx context.Context, kind, slug string, patch map[string]
 	if err := s.checkUnique(ctx, kind, entity, rec, slug); err != nil {
 		return nil, err
 	}
-	rec["updated_at"] = nowRFC3339()
 
 	body, _ := rec[bodyKey].(string)
 	delete(rec, bodyKey)
 
-	if err := writeEntity(path, rec, body); err != nil {
+	if err := writeEntity(path, frontmatterOnly(rec), body); err != nil {
 		return nil, err
 	}
 	doc, err := entityDoc(kind, entity, rec, body)
@@ -209,7 +201,9 @@ func (s *Store) ArchiveEntity(ctx context.Context, kind, slug string) error {
 	return s.indexer.Remove(kind + ":" + slug)
 }
 
-// readMap is the map[string]any version of readEntity.
+// readMap is the map[string]any version of readEntity. Injects `id`
+// from the filename so callers can rely on rec["id"] without it being
+// stored in frontmatter.
 func (s *Store) readMap(path string) (map[string]any, error) {
 	front, body, err := Parse(path)
 	if err != nil {
@@ -222,8 +216,22 @@ func (s *Store) readMap(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	rec["id"] = slugFromPath(path)
 	rec[bodyKey] = string(body)
 	return rec, nil
+}
+
+// frontmatterOnly returns a copy of rec with reserved meta keys
+// stripped. Filename is the canonical id; frontmatter never carries it.
+func frontmatterOnly(rec map[string]any) map[string]any {
+	out := make(map[string]any, len(rec))
+	for k, v := range rec {
+		if k == "id" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Store) checkUnique(ctx context.Context, kind string, entity schema.Entity, rec map[string]any, excludeSlug string) error {
@@ -248,6 +256,7 @@ func (s *Store) checkUnique(ctx context.Context, kind string, entity schema.Enti
 		if err != nil {
 			return err
 		}
+		existing["id"] = slugFromPath(path)
 		if excludeSlug != "" && asString(existing["id"]) == excludeSlug {
 			return nil
 		}

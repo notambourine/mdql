@@ -21,7 +21,6 @@ type Doc struct {
 	ID       string
 	Type     string
 	Slug     string
-	UUID     string
 	Title    string
 	Body     string
 	Tags     []string

@@ -80,6 +80,7 @@ func BuildRootCmd(s *schema.Schema) *cobra.Command {
 	registerSearch(root, opener, g)
 	registerWiki(root, opener, g)
 	registerTag(root, opener, g)
+	registerSchemaDescribe(root, s)
 	for name, entity := range s.Entities {
 		registerEntity(root, name, entity, opener, g)
 	}
@@ -173,7 +174,7 @@ func entityShowCmd(kind string, cols []format.ColumnDef, opener storeOpener, g *
 			if err != nil {
 				return err
 			}
-			return renderRecords(g, cols, []map[string]any{rec})
+			return renderRecord(g, cols, rec)
 		},
 	}
 }
@@ -316,8 +317,12 @@ func registerWiki(root *cobra.Command, opener storeOpener, g *globals) {
 	})
 	parent.AddCommand(&cobra.Command{
 		Use:   "orphans",
-		Short: "entities with no inbound links",
-		Args:  cobra.NoArgs,
+		Short: "entities with no inbound [[wiki]] links",
+		Long: "Reports entities that nothing else links to. " +
+			"Outbound links from the entity do NOT count — an entity that " +
+			"links to others but is itself unreferenced is still an orphan. " +
+			"Useful for finding records that have fallen out of the graph.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, idx, closer, err := opener(cmd.Context())
 			if err != nil {
@@ -440,6 +445,23 @@ func registerTag(root *cobra.Command, opener storeOpener, g *globals) {
 
 func renderRecords(g *globals, cols []format.ColumnDef, recs []map[string]any) error {
 	return format.Output(os.Stdout, format.Resolve(g.format), recs, cols, g.quiet)
+}
+
+// renderRecord is the singular sibling of renderRecords for commands
+// that always return exactly one record (show). JSON emits a bare
+// object so consumers don't have to .[0]; table/csv/tsv reuse the
+// list renderer with a one-row slice.
+func renderRecord(g *globals, cols []format.ColumnDef, rec map[string]any) error {
+	if g.quiet {
+		if id, ok := rec["id"]; ok {
+			fmt.Fprintln(os.Stdout, id)
+		}
+		return nil
+	}
+	if format.Resolve(g.format) == format.FormatJSON {
+		return format.OutputJSONAny(os.Stdout, rec)
+	}
+	return format.Output(os.Stdout, format.Resolve(g.format), []map[string]any{rec}, cols, false)
 }
 
 // renderAny serializes arbitrary (non-map) result types. Reuses

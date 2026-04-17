@@ -79,14 +79,18 @@ func TestCreateRoundtrip(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "jane-smith", rec["id"])
-	assert.NotEmpty(t, rec["uuid"])
-	assert.Equal(t, rec["created_at"], rec["updated_at"])
 
 	path := filepath.Join(s.Root(), "people", "jane-smith.md")
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), "first_name: Jane")
 	assert.Contains(t, string(raw), "# Notes\nhello")
+	// Frontmatter must NOT carry id/uuid/created_at/updated_at — filename
+	// is the canonical id, no auto-injected timestamp fields exist.
+	assert.NotContains(t, string(raw), "uuid:")
+	assert.NotContains(t, string(raw), "created_at:")
+	assert.NotContains(t, string(raw), "updated_at:")
+	assert.NotContains(t, string(raw), "id:")
 
 	require.Len(t, idx.upserts, 1)
 	assert.Equal(t, "person:jane-smith", idx.upserts[0].ID)
@@ -193,10 +197,9 @@ func TestListTagFilter(t *testing.T) {
 	assert.Equal(t, "jane", vips[0]["id"])
 }
 
-func TestUpdatePatchesAndBumpsTimestamp(t *testing.T) {
+func TestUpdatePatchesField(t *testing.T) {
 	s, idx := newGenericStore(t)
 	ctx := context.Background()
-	withFixedTimeSeq(t, []string{"2026-04-17T00:00:00Z", "2026-04-17T00:00:01Z"})
 
 	_, err := s.Create(ctx, "person", map[string]any{"first_name": "Jane"})
 	require.NoError(t, err)
@@ -204,7 +207,7 @@ func TestUpdatePatchesAndBumpsTimestamp(t *testing.T) {
 	rec, err := s.Update(ctx, "person", "jane", map[string]any{"email": "j@x"})
 	require.NoError(t, err)
 	assert.Equal(t, "j@x", rec["email"])
-	assert.NotEqual(t, rec["created_at"], rec["updated_at"])
+	assert.Equal(t, "jane", rec["id"])
 
 	// Two upserts: Create + Update.
 	assert.Len(t, idx.upserts, 2)
@@ -293,20 +296,6 @@ func TestReindexCountsAll(t *testing.T) {
 	assert.Equal(t, 1, stats.ByKind["deal"])
 	assert.Equal(t, 0, stats.ByKind["organization"])
 	assert.Len(t, idx.upserts, 2)
-}
-
-// withFixedTimeSeq replaces nowRFC3339 with a sequence returning each
-// entry in order. Restores the original on test cleanup.
-func withFixedTimeSeq(t *testing.T, seq []string) {
-	t.Helper()
-	orig := nowRFC3339
-	i := 0
-	nowRFC3339 = func() string {
-		v := seq[i%len(seq)]
-		i++
-		return v
-	}
-	t.Cleanup(func() { nowRFC3339 = orig })
 }
 
 func splitName(full string) []string {

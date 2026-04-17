@@ -57,7 +57,6 @@ func (i *Index) Upsert(doc store.Doc) error {
 	payload := map[string]any{
 		"type":       doc.Type,
 		"slug":       doc.Slug,
-		"uuid":       doc.UUID,
 		"title":      doc.Title,
 		"body":       doc.Body,
 		"tags":       doc.Tags,
@@ -88,7 +87,7 @@ func buildMapping() mapping.IndexMapping {
 	// re-reading the file.
 	kw := bleve.NewKeywordFieldMapping()
 	kw.Store = true
-	for _, field := range []string{"type", "slug", "uuid", "tags", "links_to", "rels", "rel_target"} {
+	for _, field := range []string{"type", "slug", "tags", "links_to", "rels", "rel_target"} {
 		entity.AddFieldMappingsAt(field, kw)
 	}
 

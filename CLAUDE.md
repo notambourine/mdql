@@ -16,6 +16,9 @@ Schema-driven typed CRUD + full-text search + wiki graph over markdown files wit
 3. Schema format: YAML (reuses `gopkg.in/yaml.v3`).
 4. Drop CRM-only behaviors: no pipeline aggregation, no context briefing, no overdue filter, no duplicate-email logic in code.
 5. Module path: `github.com/notambourine/mdql`.
+6. **Filename is canonical id.** mdql does not auto-inject `id`, `uuid`, `created_at`, or `updated_at` into frontmatter. The slug is derived from the filename on read (injected into the in-memory record as `id`). User-declared timestamp fields are honored as normal data; mdql doesn't manage them. Slug collisions get suffixed at the filename level (`jane-smith`, `jane-smith-2`).
+7. **`mdql schema describe --format json` is the agent session-entry payload.** Single command emits the full entity/field/command graph an LLM needs to derive valid commands. Stable JSON shape — integration test pins it. Always JSON; `--format` is ignored.
+8. **`wiki dangling` and `wiki orphans` return `[]` not `null` on empty result** — `jq 'length'` works without nil-handling.
 
 ## Environment
 

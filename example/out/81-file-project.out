@@ -1,9 +1,5 @@
 ---
-created_at: "2026-01-01T00:00:00Z"
-id: launch-site
 name: Launch Site
 owner: '[[ana-ray]]'
 status: active
-updated_at: "2026-01-01T00:00:00Z"
-uuid: 00000000-0000-0000-0000-000000000000
 ---

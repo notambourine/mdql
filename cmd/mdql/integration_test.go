@@ -148,14 +148,23 @@ func decodeJSON(t *testing.T, r runResult) []map[string]any {
 	return out
 }
 
+// decodeJSONObject unmarshals r.stdout into a single map. Used for
+// commands that emit one record (show).
+func decodeJSONObject(t *testing.T, r runResult) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &out); err != nil {
+		t.Fatalf("parse json: %v\nstdout: %s", err, r.stdout)
+	}
+	return out
+}
+
 // scrub removes per-run variable fields so a record can be compared to a
-// golden shape. uuid/created_at/updated_at change every invocation; body
-// is absent from list output but can leak in when a create returns.
+// golden shape. body is absent from list output but can leak in when a
+// create returns; auto-injected uuid/created_at/updated_at no longer
+// exist (filename is canonical id), so this is a no-op for those keys.
 func scrub(recs []map[string]any) []map[string]any {
 	for _, r := range recs {
-		delete(r, "uuid")
-		delete(r, "created_at")
-		delete(r, "updated_at")
 		delete(r, "body")
 	}
 	return recs
@@ -174,9 +183,6 @@ func TestPersonRoundtrip(t *testing.T) {
 	if added[0]["id"] != "jane-smith" {
 		t.Errorf("slug = %v, want jane-smith", added[0]["id"])
 	}
-	if uid, ok := added[0]["uuid"].(string); !ok || uid == "" {
-		t.Errorf("uuid missing: %v", added[0]["uuid"])
-	}
 
 	path := filepath.Join(root, "people", "jane-smith.md")
 	if _, err := os.Stat(path); err != nil {
@@ -186,9 +192,9 @@ func TestPersonRoundtrip(t *testing.T) {
 	mustRun(t, root, "person", "update", "jane-smith", "--email", "jane@new.example.com")
 
 	show := mustRun(t, root, "--format", "json", "person", "show", "jane-smith")
-	shown := decodeJSON(t, show)
-	if shown[0]["email"] != "jane@new.example.com" {
-		t.Errorf("email not updated: %v", shown[0]["email"])
+	shown := decodeJSONObject(t, show)
+	if shown["email"] != "jane@new.example.com" {
+		t.Errorf("email not updated: %v", shown["email"])
 	}
 
 	mustRun(t, root, "person", "archive", "jane-smith")
@@ -205,9 +211,9 @@ func TestOrgRoundtrip(t *testing.T) {
 	root := initStore(t)
 	mustRun(t, root, "organization", "add", "--name", "Acme Corp", "--domain", "acme.test")
 	show := mustRun(t, root, "--format", "json", "organization", "show", "acme-corp")
-	shown := decodeJSON(t, show)
-	if shown[0]["domain"] != "acme.test" {
-		t.Errorf("domain = %v", shown[0]["domain"])
+	shown := decodeJSONObject(t, show)
+	if shown["domain"] != "acme.test" {
+		t.Errorf("domain = %v", shown["domain"])
 	}
 	mustRun(t, root, "organization", "archive", "acme-corp")
 }
@@ -239,8 +245,8 @@ func TestTaskRoundtrip(t *testing.T) {
 }
 
 // TestListGoldenShape asserts `person list --format json` matches the
-// expected shape after two inserts, using a scrubbed comparison so
-// uuid/timestamps (run-variable) don't leak into the assertion.
+// expected shape after two inserts. scrub() drops the body field which
+// can leak in from create-return paths.
 func TestListGoldenShape(t *testing.T) {
 	root := initStore(t)
 	mustRun(t, root, "person", "add", "--first-name", "Ana", "--last-name", "Zed", "--email", "ana@x")
@@ -256,11 +262,12 @@ func TestListGoldenShape(t *testing.T) {
 	assertGoldenEqual(t, want, got)
 }
 
-// TestSlugCollisionPreservesUUID is the first of the three merge-
-// collision semantic-drift cases: distinct records with identical slug
-// inputs must get suffixed slugs AND distinct UUIDs so downstream
-// identity (any system keying by uuid) stays intact.
-func TestSlugCollisionPreservesUUID(t *testing.T) {
+// TestSlugCollisionSuffixesFilename pins the merge-collision behavior:
+// distinct records with identical slug inputs must get suffixed slugs
+// (filename-as-canonical-id). The previous version of this test also
+// asserted distinct UUIDs, but UUIDs were dropped — filename suffix is
+// now the only identity disambiguator.
+func TestSlugCollisionSuffixesFilename(t *testing.T) {
 	root := initStore(t)
 	a := decodeJSON(t, mustRun(t, root, "--format", "json", "person", "add",
 		"--first-name", "Jane", "--last-name", "Smith", "--email", "jane1@x"))
@@ -272,9 +279,6 @@ func TestSlugCollisionPreservesUUID(t *testing.T) {
 	}
 	if b[0]["id"] != "jane-smith-2" {
 		t.Errorf("collision slug = %v, want jane-smith-2", b[0]["id"])
-	}
-	if a[0]["uuid"] == b[0]["uuid"] {
-		t.Errorf("uuids collided: %v", a[0]["uuid"])
 	}
 }
 
@@ -482,6 +486,95 @@ func TestSchemaFlagInHelp(t *testing.T) {
 	help := mustRun(t, root, "--help").stdout
 	if !strings.Contains(help, "--schema") {
 		t.Errorf("--schema not advertised in --help:\n%s", help)
+	}
+}
+
+// TestSchemaDescribeIsAgentLoadable pins the contract that
+// `mdql schema describe` returns a JSON view containing every entity,
+// its frontmatter fields, and the commands an agent can derive from it.
+// This is the canonical session-entry payload — agents use it to learn
+// what mdql supports without having to read schema.yml directly.
+func TestSchemaDescribeIsAgentLoadable(t *testing.T) {
+	root := initStore(t)
+	r := mustRun(t, root, "schema", "describe")
+
+	var desc map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &desc); err != nil {
+		t.Fatalf("parse schema describe: %v\nstdout: %s", err, r.stdout)
+	}
+	entities, ok := desc["entities"].(map[string]any)
+	if !ok {
+		t.Fatalf("entities key missing or wrong type: %v", desc)
+	}
+	for _, want := range []string{"person", "organization", "deal", "task"} {
+		if _, ok := entities[want]; !ok {
+			t.Errorf("entity %q missing from describe output", want)
+		}
+	}
+	person, ok := entities["person"].(map[string]any)
+	if !ok {
+		t.Fatalf("person not an object")
+	}
+	fields, ok := person["frontmatter_fields"].(map[string]any)
+	if !ok || fields["first_name"] == nil {
+		t.Errorf("person.frontmatter_fields.first_name missing: %v", person)
+	}
+	if _, ok := person["sub_files"].(map[string]any); !ok {
+		t.Errorf("person.sub_files missing (should be empty object until commit 3): %v", person)
+	}
+	cmds, ok := person["commands"].([]any)
+	if !ok || len(cmds) == 0 {
+		t.Errorf("person.commands missing or empty: %v", person)
+	}
+	store, ok := desc["store"].(map[string]any)
+	if !ok || store["runtime_dir"] != ".mdql" {
+		t.Errorf("store.runtime_dir wrong: %v", store)
+	}
+}
+
+// TestWikiDanglingReturnsEmptyArrayNotNull pins the audit fix: empty
+// dangling result must marshal as `[]`, not `null`, so consumers can
+// `jq 'length'` without special-casing nil.
+func TestWikiDanglingReturnsEmptyArrayNotNull(t *testing.T) {
+	root := initStore(t)
+	r := mustRun(t, root, "--format", "json", "wiki", "dangling")
+	got := strings.TrimSpace(r.stdout)
+	if got != "[]" {
+		t.Errorf("wiki dangling on empty store = %q, want %q", got, "[]")
+	}
+}
+
+// TestWikiOrphansReturnsEmptyArrayNotNull mirrors the dangling test —
+// orphans on an empty store must marshal as `[]`, not `null`. Empty
+// store is the simplest no-orphans condition; any seed creates an
+// orphan since the seeded entity has no inbound links.
+func TestWikiOrphansReturnsEmptyArrayNotNull(t *testing.T) {
+	root := initStore(t)
+	r := mustRun(t, root, "--format", "json", "wiki", "orphans")
+	got := strings.TrimSpace(r.stdout)
+	if got != "[]" {
+		t.Errorf("wiki orphans on empty store = %q, want %q", got, "[]")
+	}
+}
+
+// TestNoAutoInjectedFrontmatterFields pins the diff-bomb prevention
+// fix: a freshly-created entity file must NOT contain id, uuid,
+// created_at, or updated_at in its frontmatter. Filename is the
+// canonical id; nothing else gets stamped in by mdql.
+func TestNoAutoInjectedFrontmatterFields(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "person", "add",
+		"--first-name", "Jane", "--last-name", "Smith",
+		"--email", "jane@example.com")
+
+	raw, err := os.ReadFile(filepath.Join(root, "people", "jane-smith.md"))
+	if err != nil {
+		t.Fatalf("read written file: %v", err)
+	}
+	for _, banned := range []string{"id:", "uuid:", "created_at:", "updated_at:"} {
+		if strings.Contains(string(raw), banned) {
+			t.Errorf("frontmatter still contains %q (should be filename-derived):\n%s", banned, raw)
+		}
 	}
 }
 

@@ -7,14 +7,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
-
-// nowRFC3339 returns the current UTC time formatted as RFC3339.
-// A package variable so tests can override for deterministic timestamps.
-var nowRFC3339 = func() string { return time.Now().UTC().Format(time.RFC3339) }
 
 // walkEntities iterates the .md files in dir, calling visit for each.
 // A missing directory is treated as empty (no error). Non-.md files and

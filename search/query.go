@@ -13,7 +13,6 @@ type Result struct {
 	ID    string  `json:"id"`
 	Type  string  `json:"type"`
 	Slug  string  `json:"slug"`
-	UUID  string  `json:"uuid"`
 	Title string  `json:"title"`
 	Score float64 `json:"score"`
 }
@@ -52,7 +51,7 @@ func (i *Index) Search(q, typeFilter string, limit int) ([]Result, error) {
 	}
 
 	req := bleve.NewSearchRequestOptions(searchQuery, limit, 0, false)
-	req.Fields = []string{"type", "slug", "uuid", "title"}
+	req.Fields = []string{"type", "slug", "title"}
 
 	res, err := i.idx.Search(req)
 	if err != nil {
@@ -64,7 +63,6 @@ func (i *Index) Search(q, typeFilter string, limit int) ([]Result, error) {
 			ID:    hit.ID,
 			Type:  stringField(hit.Fields, "type"),
 			Slug:  stringField(hit.Fields, "slug"),
-			UUID:  stringField(hit.Fields, "uuid"),
 			Title: stringField(hit.Fields, "title"),
 			Score: hit.Score,
 		})
@@ -78,7 +76,7 @@ func (i *Index) Backlinks(slug string) ([]Result, error) {
 	termQ := bleve.NewTermQuery(slug)
 	termQ.SetField("links_to")
 	req := bleve.NewSearchRequestOptions(termQ, 1000, 0, false)
-	req.Fields = []string{"type", "slug", "uuid", "title"}
+	req.Fields = []string{"type", "slug", "title"}
 
 	res, err := i.idx.Search(req)
 	if err != nil {
@@ -90,7 +88,6 @@ func (i *Index) Backlinks(slug string) ([]Result, error) {
 			ID:    hit.ID,
 			Type:  stringField(hit.Fields, "type"),
 			Slug:  stringField(hit.Fields, "slug"),
-			UUID:  stringField(hit.Fields, "uuid"),
 			Title: stringField(hit.Fields, "title"),
 			Score: hit.Score,
 		})

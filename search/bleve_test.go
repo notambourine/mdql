@@ -23,12 +23,12 @@ func TestUpsertAndSearch(t *testing.T) {
 	idx := newTestIndex(t)
 
 	require.NoError(t, idx.Upsert(store.Doc{
-		ID: "person:jane", Type: "person", Slug: "jane", UUID: "u1",
+		ID: "person:jane", Type: "person", Slug: "jane",
 		Title: "Jane Smith", Body: "notes about Jane",
 		Tags: []string{"vip", "prospect"},
 	}))
 	require.NoError(t, idx.Upsert(store.Doc{
-		ID: "person:bob", Type: "person", Slug: "bob", UUID: "u2",
+		ID: "person:bob", Type: "person", Slug: "bob",
 		Title: "Bob Jones", Body: "notes about Bob",
 	}))
 

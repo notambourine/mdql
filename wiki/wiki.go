@@ -51,7 +51,7 @@ func Backlinks(idx *search.Index, slug string) ([]Ref, error) {
 // zero links, which is already surfaced by listing it directly.
 func Orphans(ctx context.Context, s *md.Store, idx *search.Index) ([]Ref, error) {
 	_ = ctx
-	var orphans []Ref
+	orphans := make([]Ref, 0)
 	for kind, entity := range s.Schema().Entities {
 		if entity.AppendOnly {
 			continue
@@ -138,7 +138,7 @@ func Check(ctx context.Context, s *md.Store) ([]Dangling, error) {
 		return false
 	}
 
-	var dangling []Dangling
+	dangling := make([]Dangling, 0)
 	for kind, entity := range s.Schema().Entities {
 		fullDir := filepath.Join(s.Root(), entity.Dir)
 		err := walkLinks(fullDir, func(sourceSlug string, links []string) {

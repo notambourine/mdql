@@ -26,7 +26,6 @@ func entityDoc(kind string, entity schema.Entity, input map[string]any, body str
 	if !ok || slug == "" {
 		return store.Doc{}, fmt.Errorf("entityDoc: missing id")
 	}
-	uuid, _ := input["uuid"].(string)
 
 	title, err := schema.Render(entity.Title, input)
 	if err != nil {
@@ -79,7 +78,6 @@ func entityDoc(kind string, entity schema.Entity, input map[string]any, body str
 		ID:      kind + ":" + slug,
 		Type:    kind,
 		Slug:    slug,
-		UUID:    uuid,
 		Title:   title,
 		Body:    body,
 		Tags:    append([]string(nil), tags...),
