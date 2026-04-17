@@ -1,6 +1,6 @@
 bin/
-mdql
-mdql.exe
+/mdql
+/mdql.exe
 .mdql/
 *.test
 *.out
