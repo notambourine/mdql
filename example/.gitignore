@@ -1,0 +1,4 @@
+.mdql/
+# Goldens under out/ are intentionally tracked. Root .gitignore masks
+# *.out for Go test artefacts, so we un-ignore the directory here.
+!out/**

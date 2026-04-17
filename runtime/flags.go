@@ -76,7 +76,11 @@ func registerFieldFlags(cmd *cobra.Command, entity schema.Entity, markRequired b
 			cmd.Flags().StringVar(ff.str, flagName, "", desc)
 		}
 		fb.fields[flagName] = ff
-		if markRequired && field.Required {
+		// Skip MarkFlagRequired when the field has a default: cobra
+		// validates required flags before RunE runs, but schema defaults
+		// are applied inside store.Create — so requiring the flag would
+		// make the default unreachable from the CLI.
+		if markRequired && field.Required && field.Default == nil {
 			_ = cmd.MarkFlagRequired(flagName)
 		}
 	}

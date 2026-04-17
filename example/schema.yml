@@ -1,0 +1,37 @@
+version: 1
+store:
+  runtime_dir: ".mdql"
+  archive_dir: "_archive"
+
+entities:
+  project:
+    dir: projects
+    title: "{{.name}}"
+    slug:  "{{.name}}"
+    fields:
+      name:        {type: string, required: true}
+      status:      {type: enum, values: [active, paused, done], required: true, default: active}
+      owner:       {type: link, target: person}
+      tags:        {type: "string[]", sorted: true}
+
+  person:
+    dir: people
+    title: "{{.name}}"
+    slug:  "{{.name}}"
+    fields:
+      name:  {type: string, required: true}
+      email: {type: string, unique: true}
+      tags:  {type: "string[]", sorted: true}
+
+  issue:
+    dir: issues
+    title: "{{.title}}"
+    slug:  "{{.title}}"
+    fields:
+      title:    {type: string, required: true}
+      project:  {type: link, target: project, required: true}
+      assignee: {type: link, target: person}
+      priority: {type: enum, values: [low, medium, high], default: medium}
+      points:   {type: int}
+      open:     {type: bool, default: true}
+      tags:     {type: "string[]", sorted: true}

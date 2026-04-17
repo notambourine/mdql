@@ -1,0 +1,1 @@
+mdql: field "priority"="nope" not in [low medium high]: validation error

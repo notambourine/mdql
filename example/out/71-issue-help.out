@@ -1,0 +1,21 @@
+manage issue
+
+Usage:
+  mdql issue [command]
+
+Available Commands:
+  add         create issue
+  archive     archive issue
+  list        list issue
+  show        show issue
+  update      update issue
+
+Flags:
+  -h, --help   help for issue
+
+Global Flags:
+  -f, --format string   output: table|json|csv|tsv
+  -q, --quiet           IDs only
+      --root string     store root (default ".")
+
+Use "mdql issue [command] --help" for more information about a command.

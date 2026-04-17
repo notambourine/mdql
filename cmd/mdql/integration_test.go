@@ -386,6 +386,66 @@ func TestUnknownSlugExit3(t *testing.T) {
 	}
 }
 
+// TestOrphanTitlePopulated pins the fix for the empty-title bug on
+// `wiki orphans`: a lonely record must surface with its rendered
+// title, matching the behavior of `wiki backlinks` (which sources
+// titles from the search index). Before the fix, wiki.Orphans
+// constructed Ref{Type, Slug} with no Title at all.
+func TestOrphanTitlePopulated(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "person", "add", "--first-name", "Lonely", "--last-name", "Soul", "--email", "l@x")
+	r := mustRun(t, root, "--format", "json", "wiki", "orphans").stdout
+	if !strings.Contains(r, `"title":"Lonely Soul"`) {
+		t.Errorf("expected orphan title 'Lonely Soul', got: %s", r)
+	}
+}
+
+// TestFrontmatterLinkBacklinks pins the fix for the frontmatter-link
+// indexing bug: a link field written to disk as "[[slug]]" (the
+// documented wiki form, and what yaml.Marshal produces when the CLI
+// arg is bracket-wrapped) must still surface via `wiki backlinks`.
+//
+// Before the fix, entityDoc pushed the raw "[[slug]]" string into the
+// bleve links_to field — so Backlinks("acme-corp") missed the bracket-
+// wrapped entry. The contradicted doc claim is wiki/wiki.go:30
+// ("frontmatter or body").
+func TestFrontmatterLinkBacklinks(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "organization", "add", "--name", "Acme Corp", "--domain", "acme.test")
+	// Pass the wiki-wrapped form at the CLI — simulates a user who
+	// writes the frontmatter-native syntax and also matches the shape
+	// seeded by example/run.sh.
+	mustRun(t, root, "deal", "add",
+		"--title", "Acme Renewal",
+		"--stage", "lead",
+		"--org", "[[acme-corp]]",
+	)
+	mustRun(t, root, "index", "rebuild")
+	backlinks := mustRun(t, root, "--format", "json", "wiki", "backlinks", "acme-corp").stdout
+	if !strings.Contains(backlinks, `"slug":"acme-renewal"`) {
+		t.Errorf("expected acme-renewal in backlinks, got: %s", backlinks)
+	}
+}
+
+// TestRequiredFieldWithDefaultSkipsFlagValidation pins the fix for
+// the required+default footgun: deal.stage is {required: true,
+// default: lead}, so `deal add --title X` (no --stage) must succeed
+// and the schema default must land in the record. Before the fix,
+// cobra rejected the command at flag-parse time with "required
+// flag(s) stage not set" — defaults are applied later inside
+// store.Create, so requiring the flag made the default unreachable.
+func TestRequiredFieldWithDefaultSkipsFlagValidation(t *testing.T) {
+	root := initStore(t)
+	r := run(t, root, "--format", "json", "deal", "add", "--title", "Default Stage Deal")
+	if r.exitCode != 0 {
+		t.Fatalf("deal add without --stage: exit %d\nstderr: %s", r.exitCode, r.stderr)
+	}
+	added := decodeJSON(t, r)
+	if added[0]["stage"] != "lead" {
+		t.Errorf("stage = %v, want lead (schema default)", added[0]["stage"])
+	}
+}
+
 func TestValidationExit2(t *testing.T) {
 	root := initStore(t)
 	r := run(t, root, "deal", "add", "--title", "Bad Deal", "--stage", "not-a-stage")

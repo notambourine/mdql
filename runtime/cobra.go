@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/spf13/cobra"
 
@@ -246,8 +247,15 @@ func registerIndex(root *cobra.Command, opener storeOpener) {
 			if err != nil {
 				return err
 			}
-			for kind, n := range stats.ByKind {
-				fmt.Fprintf(os.Stdout, "%s\t%d\n", kind, n)
+			// Sort by kind so output is stable — map iteration in Go
+			// is randomized, and agents diff this output in goldens.
+			kinds := make([]string, 0, len(stats.ByKind))
+			for kind := range stats.ByKind {
+				kinds = append(kinds, kind)
+			}
+			sort.Strings(kinds)
+			for _, kind := range kinds {
+				fmt.Fprintf(os.Stdout, "%s\t%d\n", kind, stats.ByKind[kind])
 			}
 			return nil
 		},

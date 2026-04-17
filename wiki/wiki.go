@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/notambourine/mdql/schema"
 	"github.com/notambourine/mdql/search"
 	"github.com/notambourine/mdql/store/md"
 )
@@ -73,7 +74,11 @@ func Orphans(ctx context.Context, s *md.Store, idx *search.Index) ([]Ref, error)
 				return nil, err
 			}
 			if len(links) == 0 {
-				orphans = append(orphans, Ref{Type: kind, Slug: slug})
+				title, err := orphanTitle(ctx, s, entity, kind, slug)
+				if err != nil {
+					return nil, err
+				}
+				orphans = append(orphans, Ref{Type: kind, Slug: slug, Title: title})
 			}
 		}
 	}
@@ -84,6 +89,22 @@ func Orphans(ctx context.Context, s *md.Store, idx *search.Index) ([]Ref, error)
 		return orphans[i].Slug < orphans[j].Slug
 	})
 	return orphans, nil
+}
+
+// orphanTitle renders the entity's title template against the record
+// on disk. Returns "" when the record can't be read — the caller still
+// emits the orphan with an empty title rather than surfacing a read
+// error, so a single malformed file doesn't mask the whole report.
+func orphanTitle(ctx context.Context, s *md.Store, entity schema.Entity, kind, slug string) (string, error) {
+	rec, err := s.Get(ctx, kind, slug)
+	if err != nil {
+		return "", nil
+	}
+	title, err := schema.Render(entity.Title, rec)
+	if err != nil {
+		return "", nil
+	}
+	return title, nil
 }
 
 // Check scans every entity for [[slug]] references and reports any whose

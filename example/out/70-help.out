@@ -1,0 +1,24 @@
+schema-driven markdown CRUD + FTS + wiki
+
+Usage:
+  mdql [command]
+
+Available Commands:
+  completion  Generate the autocompletion script for the specified shell
+  help        Help about any command
+  index       manage search index
+  init        scaffold store directories from schema
+  issue       manage issue
+  person      manage person
+  project     manage project
+  search      full-text search
+  tag         manage tags
+  wiki        wiki graph queries
+
+Flags:
+  -f, --format string   output: table|json|csv|tsv
+  -h, --help            help for mdql
+  -q, --quiet           IDs only
+      --root string     store root (default ".")
+
+Use "mdql [command] --help" for more information about a command.

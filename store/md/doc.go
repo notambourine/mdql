@@ -45,16 +45,27 @@ func entityDoc(kind string, entity schema.Entity, input map[string]any, body str
 				tags = toStringSlice(input[fname])
 			}
 		case "link":
-			if v, ok := input[fname].(string); ok && v != "" {
-				links = append(links, v)
+			// Strip [[...]] wrapping: the generic map[string]any path
+			// bypasses model.Link.UnmarshalYAML, so values arrive here
+			// as-written (either bare "slug" or wiki-wrapped "[[slug]]").
+			// The bleve links_to field must store bare slugs so Backlinks
+			// queries (which use bare slugs) can match.
+			if v, ok := input[fname].(string); ok {
+				if slug := stripWiki(v); slug != "" {
+					links = append(links, slug)
+				}
 			}
 		case "link[]":
-			links = append(links, toStringSlice(input[fname])...)
+			for _, v := range toStringSlice(input[fname]) {
+				if slug := stripWiki(v); slug != "" {
+					links = append(links, slug)
+				}
+			}
 		case "relation[]":
 			for _, rel := range toRelationSlice(input[fname]) {
 				if rel.Type != "" && rel.To != "" {
 					rels = append(rels, rel.Type+":"+rel.To)
-					links = append(links, rel.To)
+					links = append(links, stripWiki(rel.To))
 				}
 			}
 		}

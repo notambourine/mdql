@@ -1,0 +1,20 @@
+create issue
+
+Usage:
+  mdql issue add [flags]
+
+Flags:
+      --assignee string   person slug
+      --body string       markdown body
+  -h, --help              help for add
+      --open              
+      --points int        
+      --priority string   low|medium|high
+      --project string    project slug
+      --tags strings      
+      --title string      required
+
+Global Flags:
+  -f, --format string   output: table|json|csv|tsv
+  -q, --quiet           IDs only
+      --root string     store root (default ".")
