@@ -85,6 +85,17 @@ func outputJSON(w io.Writer, data []map[string]any) error {
 	return enc.Encode(data)
 }
 
+// OutputJSONAny writes any value as JSON using the same TTY-aware
+// indentation rule as outputJSON. Used by the runtime for results
+// whose shape is not map[string]any (search hits, wiki refs).
+func OutputJSONAny(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		enc.SetIndent("", "  ")
+	}
+	return enc.Encode(v)
+}
+
 func outputTable(w io.Writer, data []map[string]any, columns []ColumnDef) error {
 	if len(data) == 0 {
 		fmt.Fprintln(w, "No results.")
