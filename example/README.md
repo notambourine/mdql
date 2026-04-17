@@ -94,12 +94,6 @@ Read these first to see mdql's shape without running it:
   Site` → `launch-site`. Pass bare slugs or the wiki-wrapped form
   `[[ana-ray]]` to link flags — both work.
 
-## Known rough edges
-
-- `--schema` is accepted and works, but does not appear in `mdql --help`.
-  The flag is stripped from argv before cobra sees it (the schema shapes
-  the command tree, so cobra can't own the flag). Cosmetic only.
-
 ## Extending the example
 
 Want to add a `comment` entity (append-only, linked to issue)? Edit

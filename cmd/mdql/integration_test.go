@@ -473,6 +473,18 @@ func TestDroppedCommandsAbsent(t *testing.T) {
 	}
 }
 
+// TestSchemaFlagInHelp guards the cosmetic fix that advertises the
+// pre-cobra --schema flag in `mdql --help`. The flag is authoritatively
+// parsed in main() before cobra runs (the schema shapes the command
+// tree), then re-declared on the cobra root purely for discoverability.
+func TestSchemaFlagInHelp(t *testing.T) {
+	root := initStore(t)
+	help := mustRun(t, root, "--help").stdout
+	if !strings.Contains(help, "--schema") {
+		t.Errorf("--schema not advertised in --help:\n%s", help)
+	}
+}
+
 // rewriteID renames oldPath to newPath and rewrites the id frontmatter
 // key to newID. Used by TestRenameSurfacesDanglingLinks to simulate an
 // out-of-band file rename that mdql itself does not offer as a command.

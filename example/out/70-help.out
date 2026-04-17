@@ -20,5 +20,6 @@ Flags:
   -h, --help            help for mdql
   -q, --quiet           IDs only
       --root string     store root (default ".")
+      --schema string   schema file path (default "./schema.yml")
 
 Use "mdql [command] --help" for more information about a command.

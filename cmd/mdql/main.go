@@ -21,12 +21,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, "mdql:", err)
 		os.Exit(1)
 	}
-	os.Exit(engine.Run(filterSchemaFlag(os.Args), s))
+	os.Exit(engine.Run(os.Args, s))
 }
 
 // resolveSchemaPath returns the value of --schema, defaulting to
 // ./schema.yml. Must run before cobra sees argv because the schema
-// shapes the command tree itself.
+// shapes the command tree itself. Cobra re-parses the same flag to
+// advertise it in `mdql --help`; the re-parsed value is unused.
 func resolveSchemaPath(args []string) string {
 	for i, a := range args {
 		if a == "--schema" && i+1 < len(args) {
@@ -37,23 +38,4 @@ func resolveSchemaPath(args []string) string {
 		}
 	}
 	return "./schema.yml"
-}
-
-// filterSchemaFlag strips --schema/--schema=X from argv so cobra
-// doesn't choke on an unknown flag. Kept tiny — this is the only
-// flag the pre-cobra pass owns.
-func filterSchemaFlag(args []string) []string {
-	out := make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--schema" {
-			i++
-			continue
-		}
-		if len(a) > len("--schema=") && a[:len("--schema=")] == "--schema=" {
-			continue
-		}
-		out = append(out, a)
-	}
-	return out
 }

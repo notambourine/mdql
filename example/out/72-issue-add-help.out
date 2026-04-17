@@ -18,3 +18,4 @@ Global Flags:
   -f, --format string   output: table|json|csv|tsv
   -q, --quiet           IDs only
       --root string     store root (default ".")
+      --schema string   schema file path (default "./schema.yml")

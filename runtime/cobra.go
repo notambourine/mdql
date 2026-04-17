@@ -24,6 +24,11 @@ type globals struct {
 	root   string
 	format string
 	quiet  bool
+	// schema is bound so `--schema` shows up in `mdql --help`. The
+	// value isn't read here — the binary's main() pre-parses --schema
+	// from os.Args to build this very command tree. Registering it on
+	// cobra is purely cosmetic (advertise the flag in help output).
+	schema string
 }
 
 // storeOpener is a factory the CLI calls lazily so we only open bleve
@@ -51,6 +56,7 @@ func BuildRootCmd(s *schema.Schema) *cobra.Command {
 	root.PersistentFlags().StringVar(&g.root, "root", ".", "store root")
 	root.PersistentFlags().StringVarP(&g.format, "format", "f", "", "output: table|json|csv|tsv")
 	root.PersistentFlags().BoolVarP(&g.quiet, "quiet", "q", false, "IDs only")
+	root.PersistentFlags().StringVar(&g.schema, "schema", "./schema.yml", "schema file path")
 
 	opener := func(ctx context.Context) (*md.Store, *search.Index, func(), error) {
 		abs, err := filepath.Abs(g.root)
