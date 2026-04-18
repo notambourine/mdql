@@ -251,7 +251,7 @@ func (s *Store) CreateSubFile(ctx context.Context, parentKind, parentSlug, subKi
 		return SubFileRecord{}, err
 	}
 	rec["id"] = slug
-	return SubFileRecord{
+	out := SubFileRecord{
 		Kind:       subKind,
 		ParentKind: parentKind,
 		ParentSlug: parentSlug,
@@ -259,7 +259,25 @@ func (s *Store) CreateSubFile(ctx context.Context, parentKind, parentSlug, subKi
 		Path:       path,
 		Fields:     rec,
 		Body:       body,
-	}, nil
+	}
+	if err := s.indexSubFile(parentKind, parentSlug, sub, out); err != nil {
+		return SubFileRecord{}, err
+	}
+	return out, nil
+}
+
+// indexSubFile is a thin wrapper so create/update share one upsert
+// path. Keeps subFileDoc construction in one place and isolates the
+// indexer call so later dry-run support (commit 5) can intercept it.
+func (s *Store) indexSubFile(parentKind, parentSlug string, sub schema.SubFile, rec SubFileRecord) error {
+	doc, err := subFileDoc(parentKind, parentSlug, sub, rec)
+	if err != nil {
+		return err
+	}
+	if err := s.indexer.Upsert(doc); err != nil {
+		return fmt.Errorf("index sub-file: %w", err)
+	}
+	return nil
 }
 
 // GetSubFile returns the sub-file with the given slug.
@@ -380,6 +398,9 @@ func (s *Store) UpdateSubFile(ctx context.Context, parentKind, parentSlug, subKi
 	}
 	rec.Fields["id"] = subSlug
 	rec.Body = body
+	if err := s.indexSubFile(parentKind, parentSlug, sub, rec); err != nil {
+		return SubFileRecord{}, err
+	}
 	return rec, nil
 }
 
@@ -401,6 +422,9 @@ func (s *Store) DeleteSubFile(ctx context.Context, parentKind, parentSlug, subKi
 	}
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove %s: %w", path, err)
+	}
+	if err := s.indexer.Remove(subFileDocID(parentKind, parentSlug, subKind, subSlug)); err != nil {
+		return fmt.Errorf("deindex sub-file: %w", err)
 	}
 	return nil
 }

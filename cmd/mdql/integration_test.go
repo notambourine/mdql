@@ -55,7 +55,8 @@ entities:
         dir: decisions
         slug: "{{.title}}"
         fields:
-          title: {type: string, required: true}
+          title:      {type: string, required: true}
+          supersedes: {type: link, target: project.decision}
       milestone:
         dir: milestones
         slug: "{{.name}}"
@@ -824,6 +825,122 @@ func TestLintWarningExitOne(t *testing.T) {
 	}
 	if !strings.Contains(r.stdout, "errors=0") {
 		t.Errorf("expected errors=0 in summary: %q", r.stdout)
+	}
+}
+
+// TestWikiLinkSubFilePathResolves pins the grammar extension: a body
+// reference of the form [[parent-slug/subdir/sub-slug]] must resolve
+// against a real sub-file path and NOT surface as dangling. Before
+// commit 4 this false-positived.
+func TestWikiLinkSubFilePathResolves(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site")
+	mustRun(t, root, "project", "decision", "add", "launch-site", "--title", "use-tailwind")
+	mustRun(t, root, "project", "meeting", "add", "launch-site",
+		"--subject", "review", "--date", "2026-04-20",
+		"--body", "Follows up on [[launch-site/decisions/use-tailwind]].",
+	)
+	r := mustRun(t, root, "--format", "json", "wiki", "dangling").stdout
+	if got := strings.TrimSpace(r); got != "[]" {
+		t.Errorf("sub-file path reference should resolve, got dangling: %s", got)
+	}
+}
+
+// TestWikiLinkKindQualifiedResolves pins the 2-segment grammar: a
+// `[[kind/slug]]` reference resolves against a known entity and does
+// not surface as dangling.
+func TestWikiLinkKindQualifiedResolves(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "jane@x")
+	mustRun(t, root, "project", "add", "--name", "Relate",
+		"--body", "Owner: [[person/jane-smith]].",
+	)
+	r := mustRun(t, root, "--format", "json", "wiki", "dangling").stdout
+	if got := strings.TrimSpace(r); got != "[]" {
+		t.Errorf("kind-qualified reference should resolve, got dangling: %s", got)
+	}
+}
+
+// TestWikiBacklinksSurfaceSubFileRefs pins that a sub-file body linking
+// to an entity surfaces via `backlinks <parent-slug>`. Demonstrates the
+// ExpandLinkKeys fan-out: the link `[[jane-smith]]` inside a meeting
+// produces a `jane-smith` key in the meeting doc's LinksTo.
+func TestWikiBacklinksSurfaceSubFileRefs(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "jane@x")
+	mustRun(t, root, "project", "add", "--name", "Launch Site")
+	mustRun(t, root, "project", "meeting", "add", "launch-site",
+		"--subject", "kickoff", "--date", "2026-04-17",
+		"--body", "Led by [[jane-smith]].",
+	)
+	r := mustRun(t, root, "--format", "json", "wiki", "backlinks", "jane-smith").stdout
+	if !strings.Contains(r, `"sub_kind":"meeting"`) {
+		t.Errorf("expected meeting sub-file in backlinks of jane-smith, got: %s", r)
+	}
+}
+
+// TestCrossSubFileLinkRoundtrip pins the `project.decision` target form:
+// a decision's `supersedes` link field pointing at another decision must
+// index + surface via wiki backlinks for the superseded decision.
+func TestCrossSubFileLinkRoundtrip(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site")
+	mustRun(t, root, "project", "decision", "add", "launch-site", "--title", "use-bootstrap")
+	mustRun(t, root, "project", "decision", "add", "launch-site",
+		"--title", "use-tailwind",
+		"--supersedes", "[[launch-site/decisions/use-bootstrap]]",
+	)
+
+	// backlinks on the superseded decision should include the superseding one.
+	r := mustRun(t, root, "--format", "json", "wiki", "backlinks",
+		"launch-site/decisions/use-bootstrap").stdout
+	if !strings.Contains(r, `"slug":"use-tailwind"`) {
+		t.Errorf("expected use-tailwind to reference use-bootstrap, got: %s", r)
+	}
+}
+
+// TestSearchSubFilter pins the --sub flag: returns only sub-file hits
+// of the specified sub-kind. Seeds an entity and a meeting that share
+// a body token ("shipping") to force the filter to matter.
+func TestSearchSubFilter(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site",
+		"--body", "Focused on shipping next quarter.")
+	mustRun(t, root, "project", "meeting", "add", "launch-site",
+		"--subject", "kickoff", "--date", "2026-04-17",
+		"--body", "Agenda: shipping cadence.")
+
+	r := mustRun(t, root, "--format", "json", "search", "shipping", "--sub", "meeting").stdout
+	var hits []map[string]any
+	if err := json.Unmarshal([]byte(r), &hits); err != nil {
+		t.Fatalf("parse: %v\n%s", err, r)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("expected 1 hit, got %d: %s", len(hits), r)
+	}
+	if hits[0]["sub_kind"] != "meeting" {
+		t.Errorf("expected sub_kind=meeting, got: %v", hits[0])
+	}
+}
+
+// TestSearchTypeDisjunction pins the --type convenience: matches either
+// Type (entity kind) or SubKind (sub-file kind). No cross-kind --type
+// argument was needed before sub-files existed; now it's the most
+// common filter an agent reaches for.
+func TestSearchTypeDisjunction(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site")
+	mustRun(t, root, "project", "meeting", "add", "launch-site",
+		"--subject", "kickoff", "--date", "2026-04-17",
+		"--body", "onboarding agenda")
+
+	r := mustRun(t, root, "--format", "json", "search", "onboarding", "--type", "meeting").stdout
+	var hits []map[string]any
+	if err := json.Unmarshal([]byte(r), &hits); err != nil {
+		t.Fatalf("parse: %v\n%s", err, r)
+	}
+	if len(hits) == 0 {
+		t.Errorf("--type meeting should match sub-files by sub_kind, got: %s", r)
 	}
 }
 

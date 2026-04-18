@@ -17,15 +17,23 @@ type Indexer interface {
 // frontmatter string fields and body. Rels captures typed relationship
 // edges as "<type>:<target-slug>" so bidirectional queries reduce to a
 // term lookup.
+//
+// For sub-file docs, ParentKind/ParentSlug/SubKind are populated and
+// Type carries the sub-file kind (so `search --type meeting` matches
+// sub-files by kind directly). Entity docs leave those three empty and
+// Type carries the entity kind.
 type Doc struct {
-	ID       string
-	Type     string
-	Slug     string
-	Title    string
-	Body     string
-	Tags     []string
-	LinksTo  []string
-	Rels     []string
+	ID         string
+	Type       string
+	Slug       string
+	Title      string
+	Body       string
+	Tags       []string
+	LinksTo    []string
+	Rels       []string
+	ParentKind string
+	ParentSlug string
+	SubKind    string
 }
 
 // NoopIndexer discards all writes. Used when search is disabled or during

@@ -32,7 +32,7 @@ func TestUpsertAndSearch(t *testing.T) {
 		Title: "Bob Jones", Body: "notes about Bob",
 	}))
 
-	results, err := idx.Search("Jane", "", 10)
+	results, err := idx.Search("Jane", Filter{}, 10)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	assert.Equal(t, "person:jane", results[0].ID)
@@ -48,7 +48,7 @@ func TestSearchTypeFilter(t *testing.T) {
 		ID: "organization:acme", Type: "organization", Slug: "acme", Title: "Jane Industries",
 	}))
 
-	results, err := idx.Search("Jane", "person", 10)
+	results, err := idx.Search("Jane", Filter{Type: "person"}, 10)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	assert.Equal(t, "person", results[0].Type)
@@ -117,7 +117,7 @@ func TestRemove(t *testing.T) {
 	}))
 
 	require.NoError(t, idx.Remove("person:jane"))
-	results, err := idx.Search("Jane", "", 10)
+	results, err := idx.Search("Jane", Filter{}, 10)
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
@@ -135,7 +135,7 @@ func TestReopenPreservesData(t *testing.T) {
 	idx2, err := Open(path)
 	require.NoError(t, err)
 	defer idx2.Close()
-	results, err := idx2.Search("Jane", "", 10)
+	results, err := idx2.Search("Jane", Filter{}, 10)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 }

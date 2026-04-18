@@ -8,13 +8,18 @@ import (
 	"github.com/blevesearch/bleve/v2/search/query"
 )
 
-// Result is a flattened search hit for CLI consumption.
+// Result is a flattened search hit for CLI consumption. ParentKind,
+// ParentSlug, and SubKind are populated for sub-file hits and empty
+// for entity hits, so the JSON shape stays uniform across kinds.
 type Result struct {
-	ID    string  `json:"id"`
-	Type  string  `json:"type"`
-	Slug  string  `json:"slug"`
-	Title string  `json:"title"`
-	Score float64 `json:"score"`
+	ID         string  `json:"id"`
+	Type       string  `json:"type"`
+	Slug       string  `json:"slug"`
+	Title      string  `json:"title"`
+	Score      float64 `json:"score"`
+	ParentKind string  `json:"parent_kind,omitempty"`
+	ParentSlug string  `json:"parent_slug,omitempty"`
+	SubKind    string  `json:"sub_kind,omitempty"`
 }
 
 // RelResult describes a single person-to-person relationship edge.
@@ -29,9 +34,22 @@ type RelResult struct {
 	Direction string `json:"direction"`
 }
 
+// Filter narrows a Search call by record kind. Zero-value means
+// "no filter on that axis". --type is a disjunction that matches either
+// the stored type (entity docs) or sub_kind (sub-file docs) — the usual
+// case when a user knows the kind name and doesn't care which surface
+// it lives on. ParentKind + SubKind are the explicit-compound form, for
+// the rare case where a sub-kind name collides with an entity kind.
+type Filter struct {
+	Type       string
+	ParentKind string
+	SubKind    string
+}
+
 // Search runs a full-text query against title+body+tags.
-// typeFilter narrows to a single entity kind when non-empty.
-func (i *Index) Search(q, typeFilter string, limit int) ([]Result, error) {
+// Filter narrows results to the specified kind axes; any Zero field on
+// Filter is ignored.
+func (i *Index) Search(q string, filter Filter, limit int) ([]Result, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -40,18 +58,33 @@ func (i *Index) Search(q, typeFilter string, limit int) ([]Result, error) {
 		return nil, fmt.Errorf("empty query")
 	}
 
+	clauses := []query.Query{bleve.NewQueryStringQuery(q)}
+	if filter.Type != "" {
+		typeOr := bleve.NewTermQuery(filter.Type)
+		typeOr.SetField("type")
+		subOr := bleve.NewTermQuery(filter.Type)
+		subOr.SetField("sub_kind")
+		clauses = append(clauses, bleve.NewDisjunctionQuery(typeOr, subOr))
+	}
+	if filter.ParentKind != "" {
+		parent := bleve.NewTermQuery(filter.ParentKind)
+		parent.SetField("parent_kind")
+		clauses = append(clauses, parent)
+	}
+	if filter.SubKind != "" {
+		sub := bleve.NewTermQuery(filter.SubKind)
+		sub.SetField("sub_kind")
+		clauses = append(clauses, sub)
+	}
 	var searchQuery query.Query
-	matchAll := bleve.NewQueryStringQuery(q)
-	if typeFilter == "" {
-		searchQuery = matchAll
+	if len(clauses) == 1 {
+		searchQuery = clauses[0]
 	} else {
-		typeClause := bleve.NewTermQuery(typeFilter)
-		typeClause.SetField("type")
-		searchQuery = bleve.NewConjunctionQuery(matchAll, typeClause)
+		searchQuery = bleve.NewConjunctionQuery(clauses...)
 	}
 
 	req := bleve.NewSearchRequestOptions(searchQuery, limit, 0, false)
-	req.Fields = []string{"type", "slug", "title"}
+	req.Fields = []string{"type", "slug", "title", "parent_kind", "parent_slug", "sub_kind"}
 
 	res, err := i.idx.Search(req)
 	if err != nil {
@@ -60,11 +93,14 @@ func (i *Index) Search(q, typeFilter string, limit int) ([]Result, error) {
 	out := make([]Result, 0, len(res.Hits))
 	for _, hit := range res.Hits {
 		out = append(out, Result{
-			ID:    hit.ID,
-			Type:  stringField(hit.Fields, "type"),
-			Slug:  stringField(hit.Fields, "slug"),
-			Title: stringField(hit.Fields, "title"),
-			Score: hit.Score,
+			ID:         hit.ID,
+			Type:       stringField(hit.Fields, "type"),
+			Slug:       stringField(hit.Fields, "slug"),
+			Title:      stringField(hit.Fields, "title"),
+			Score:      hit.Score,
+			ParentKind: stringField(hit.Fields, "parent_kind"),
+			ParentSlug: stringField(hit.Fields, "parent_slug"),
+			SubKind:    stringField(hit.Fields, "sub_kind"),
 		})
 	}
 	return out, nil
@@ -76,7 +112,7 @@ func (i *Index) Backlinks(slug string) ([]Result, error) {
 	termQ := bleve.NewTermQuery(slug)
 	termQ.SetField("links_to")
 	req := bleve.NewSearchRequestOptions(termQ, 1000, 0, false)
-	req.Fields = []string{"type", "slug", "title"}
+	req.Fields = []string{"type", "slug", "title", "parent_kind", "parent_slug", "sub_kind"}
 
 	res, err := i.idx.Search(req)
 	if err != nil {
@@ -85,11 +121,14 @@ func (i *Index) Backlinks(slug string) ([]Result, error) {
 	out := make([]Result, 0, len(res.Hits))
 	for _, hit := range res.Hits {
 		out = append(out, Result{
-			ID:    hit.ID,
-			Type:  stringField(hit.Fields, "type"),
-			Slug:  stringField(hit.Fields, "slug"),
-			Title: stringField(hit.Fields, "title"),
-			Score: hit.Score,
+			ID:         hit.ID,
+			Type:       stringField(hit.Fields, "type"),
+			Slug:       stringField(hit.Fields, "slug"),
+			Title:      stringField(hit.Fields, "title"),
+			Score:      hit.Score,
+			ParentKind: stringField(hit.Fields, "parent_kind"),
+			ParentSlug: stringField(hit.Fields, "parent_slug"),
+			SubKind:    stringField(hit.Fields, "sub_kind"),
 		})
 	}
 	return out, nil

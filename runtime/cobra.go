@@ -309,7 +309,7 @@ func registerIndex(root *cobra.Command, opener storeOpener) {
 }
 
 func registerSearch(root *cobra.Command, opener storeOpener, g *globals) {
-	var typeFilter string
+	var typeFilter, kindFilter, subFilter string
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "search <query>",
@@ -321,14 +321,17 @@ func registerSearch(root *cobra.Command, opener storeOpener, g *globals) {
 				return err
 			}
 			defer closer()
-			results, err := idx.Search(args[0], typeFilter, limit)
+			filter := search.Filter{Type: typeFilter, ParentKind: kindFilter, SubKind: subFilter}
+			results, err := idx.Search(args[0], filter, limit)
 			if err != nil {
 				return err
 			}
 			return renderAny(g, results)
 		},
 	}
-	cmd.Flags().StringVar(&typeFilter, "type", "", "filter by entity kind")
+	cmd.Flags().StringVar(&typeFilter, "type", "", "filter by entity kind or sub-file kind")
+	cmd.Flags().StringVar(&kindFilter, "kind", "", "filter by parent entity kind (for sub-files)")
+	cmd.Flags().StringVar(&subFilter, "sub", "", "filter by sub-file kind")
 	cmd.Flags().IntVar(&limit, "limit", 20, "max results")
 	root.AddCommand(cmd)
 }

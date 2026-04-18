@@ -130,6 +130,7 @@ func Lint(ctx context.Context, s *md.Store) (*Report, error) {
 		r.Findings = append(r.Findings, Finding{
 			Severity: "warn", Code: "dangling_link",
 			Kind: d.SourceType, Slug: d.SourceSlug,
+			SubKind: d.SubKind, SubSlug: d.SubSlug,
 			Message: fmt.Sprintf("link target %q not found", d.TargetSlug),
 		})
 	}

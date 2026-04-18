@@ -55,14 +55,17 @@ func (i *Index) Close() error {
 // Upsert indexes (or replaces) a document.
 func (i *Index) Upsert(doc store.Doc) error {
 	payload := map[string]any{
-		"type":       doc.Type,
-		"slug":       doc.Slug,
-		"title":      doc.Title,
-		"body":       doc.Body,
-		"tags":       doc.Tags,
-		"links_to":   doc.LinksTo,
-		"rels":       doc.Rels,
-		"rel_target": relTargets(doc.Rels),
+		"type":        doc.Type,
+		"slug":        doc.Slug,
+		"title":       doc.Title,
+		"body":        doc.Body,
+		"tags":        doc.Tags,
+		"links_to":    doc.LinksTo,
+		"rels":        doc.Rels,
+		"rel_target":  relTargets(doc.Rels),
+		"parent_kind": doc.ParentKind,
+		"parent_slug": doc.ParentSlug,
+		"sub_kind":    doc.SubKind,
 	}
 	return i.idx.Index(doc.ID, payload)
 }
@@ -87,7 +90,7 @@ func buildMapping() mapping.IndexMapping {
 	// re-reading the file.
 	kw := bleve.NewKeywordFieldMapping()
 	kw.Store = true
-	for _, field := range []string{"type", "slug", "tags", "links_to", "rels", "rel_target"} {
+	for _, field := range []string{"type", "slug", "tags", "links_to", "rels", "rel_target", "parent_kind", "parent_slug", "sub_kind"} {
 		entity.AddFieldMappingsAt(field, kw)
 	}
 

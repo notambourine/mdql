@@ -189,9 +189,25 @@ func (s *Store) Update(ctx context.Context, kind, slug string, patch map[string]
 // archive tree and removing it from the index. Distinct from Archive
 // (defined in archive.go) which is file-only; this is the method the
 // runtime CLI should call.
+//
+// Sub-file docs owned by the archived entity are removed from the
+// index first — otherwise they'd keep appearing in search results
+// pointing at a path that no longer exists on disk.
 func (s *Store) ArchiveEntity(ctx context.Context, kind, slug string) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
+	}
+	entity, ok := s.schema.Entities[kind]
+	if ok && entity.IsSprawl() && len(entity.Files) > 0 {
+		subs, err := s.ListSubFileGraph(ctx, kind, slug)
+		if err != nil {
+			return err
+		}
+		for _, sub := range subs {
+			if err := s.indexer.Remove(subFileDocID(kind, slug, sub.Kind, sub.Slug)); err != nil {
+				return fmt.Errorf("deindex sub-file: %w", err)
+			}
+		}
 	}
 	if err := s.Archive(kind, slug); err != nil {
 		return err

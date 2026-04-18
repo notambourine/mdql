@@ -71,6 +71,7 @@ func entityDoc(kind string, entity schema.Entity, input map[string]any, body str
 	}
 
 	links = append(links, ParseLinks([]byte(body))...)
+	links = expandAll(links)
 	links = sortedDedup(links)
 	sort.Strings(rels)
 
@@ -115,6 +116,20 @@ func toStringSlice(v any) []string {
 	default:
 		return nil
 	}
+}
+
+// expandAll fans each link target through ExpandLinkKeys so multi-
+// segment refs surface under both their full form and their parent
+// slug. The caller is responsible for the final sort+dedup.
+func expandAll(links []string) []string {
+	if len(links) == 0 {
+		return links
+	}
+	out := make([]string, 0, len(links))
+	for _, l := range links {
+		out = append(out, ExpandLinkKeys(l)...)
+	}
+	return out
 }
 
 func toRelationSlice(v any) []relation {

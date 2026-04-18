@@ -61,7 +61,11 @@ func (s *Store) Indexer() store.Indexer { return s.indexer }
 func (s *Store) Close() error { return nil }
 
 // Reindex walks every schema entity and pushes each record to the
-// indexer. Returns counts per kind.
+// indexer. Returns counts per kind. Sub-file docs are indexed under
+// their sub-kind (so `search --type meeting` works) and the count rolls
+// up under the parent kind's tally — one agent-facing "I reindexed N
+// project records" line is more useful than a split count for a pure
+// health-check command.
 func (s *Store) Reindex(ctx context.Context) (ReindexStats, error) {
 	stats := ReindexStats{ByKind: map[string]int{}}
 	for kind, entity := range s.schema.Entities {
@@ -79,6 +83,26 @@ func (s *Store) Reindex(ctx context.Context) (ReindexStats, error) {
 				return stats, fmt.Errorf("index %s/%s: %w", kind, rec["id"], err)
 			}
 			stats.ByKind[kind]++
+
+			if !entity.IsSprawl() || len(entity.Files) == 0 {
+				continue
+			}
+			parentSlug, _ := rec["id"].(string)
+			subs, err := s.ListSubFileGraph(ctx, kind, parentSlug)
+			if err != nil {
+				return stats, fmt.Errorf("list subs %s/%s: %w", kind, parentSlug, err)
+			}
+			for _, sub := range subs {
+				subSchema := entity.Files[sub.Kind]
+				sdoc, err := subFileDoc(kind, parentSlug, subSchema, sub)
+				if err != nil {
+					return stats, fmt.Errorf("build sub-doc %s/%s/%s/%s: %w", kind, parentSlug, sub.Kind, sub.Slug, err)
+				}
+				if err := s.indexer.Upsert(sdoc); err != nil {
+					return stats, fmt.Errorf("index sub %s/%s/%s/%s: %w", kind, parentSlug, sub.Kind, sub.Slug, err)
+				}
+				stats.ByKind[kind]++
+			}
 		}
 	}
 	return stats, nil
