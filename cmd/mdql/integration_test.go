@@ -13,10 +13,14 @@ import (
 	"testing"
 )
 
-// fixtureSchema is the CRM-shaped schema the integration tests run
-// against. Mirrors schema/schema_test.go#crmFixture minus the bits
-// unrelated to CLI parity (relationships, interactions) so the tests
-// exercise the same commands a CRM user would.
+// fixtureSchema is the canonical two-entity schema the integration
+// tests run against: person (flat fields) and project (link + enum +
+// four sub-file kinds covering dir/slug templating, required/default
+// validation, and catchall absorption). Deliberately minimal — every
+// feature the CLI exposes is exercised by at least one test, and
+// nothing more. Replaces the previous CRM-shaped fixture (person/
+// organization/deal/task) per commit-3 spec: one fixture covers
+// entity CRUD, sub-file CRUD, and the schema describe contract.
 const fixtureSchema = `
 version: 1
 store:
@@ -25,38 +29,44 @@ store:
 entities:
   person:
     dir: people
-    title: "{{.first_name}} {{.last_name}}"
-    slug:  "{{.first_name}} {{.last_name}}"
-    fields:
-      first_name: {type: string, required: true}
-      last_name:  {type: string}
-      email:      {type: string, unique: true}
-      org:        {type: link, target: organization}
-      tags:       {type: "string[]", sorted: true}
-  organization:
-    dir: organizations
     title: "{{.name}}"
     slug:  "{{.name}}"
     fields:
-      name:   {type: string, required: true}
-      domain: {type: string}
-  deal:
-    dir: deals
-    title: "{{.title}}"
-    slug:  "{{.title}}"
+      name:  {type: string, required: true}
+      email: {type: string, unique: true}
+      role:  {type: enum, values: [ic, lead, exec], required: true, default: ic}
+      tags:  {type: "string[]", sorted: true}
+  project:
+    dir: projects
+    title: "{{.name}}"
+    slug:  "{{.name}}"
     fields:
-      title: {type: string, required: true}
-      value: {type: float}
-      stage: {type: enum, values: [lead, won, lost], required: true, default: lead}
-      org:   {type: link, target: organization}
-  task:
-    dir: tasks
-    title: "{{.title}}"
-    slug:  "{{.title}}"
-    fields:
-      title:     {type: string, required: true}
-      priority:  {type: enum, values: [low, medium, high], default: medium}
-      completed: {type: bool, default: false}
+      name:  {type: string, required: true}
+      stage: {type: enum, values: [draft, active, done], required: true, default: draft}
+      lead:  {type: link, target: person}
+    files:
+      meeting:
+        dir: meetings
+        slug: "{{.date}}-{{.subject}}"
+        fields:
+          subject: {type: string, required: true}
+          date:    {type: string, required: true}
+      decision:
+        dir: decisions
+        slug: "{{.title}}"
+        fields:
+          title: {type: string, required: true}
+      milestone:
+        dir: milestones
+        slug: "{{.name}}"
+        fields:
+          name: {type: string, required: true}
+          due:  {type: string}
+      note:
+        catchall: true
+        dir: notes
+        fields:
+          title: {type: string}
 `
 
 var mdqlBinary string
@@ -172,7 +182,7 @@ func TestPersonRoundtrip(t *testing.T) {
 	root := initStore(t)
 
 	add := mustRun(t, root, "--format", "json", "person", "add",
-		"--first-name", "Jane", "--last-name", "Smith",
+		"--name", "Jane Smith",
 		"--email", "jane@example.com")
 	added := decodeJSON(t, add)
 	if len(added) != 1 {
@@ -206,41 +216,22 @@ func TestPersonRoundtrip(t *testing.T) {
 	}
 }
 
-func TestOrgRoundtrip(t *testing.T) {
+func TestProjectRoundtrip(t *testing.T) {
 	root := initStore(t)
-	mustRun(t, root, "organization", "add", "--name", "Acme Corp", "--domain", "acme.test")
-	show := mustRun(t, root, "--format", "json", "organization", "show", "acme-corp")
+	mustRun(t, root, "project", "add", "--name", "Launch Site", "--stage", "active")
+	list := mustRun(t, root, "--format", "json", "project", "list")
+	projects := decodeJSON(t, list)
+	if len(projects) != 1 {
+		t.Fatalf("expected 1 project, got %d", len(projects))
+	}
+	id := projects[0]["id"].(string)
+	mustRun(t, root, "project", "update", id, "--stage", "done")
+	show := mustRun(t, root, "--format", "json", "project", "show", id)
 	shown := decodeJSONObject(t, show)
-	if shown["domain"] != "acme.test" {
-		t.Errorf("domain = %v", shown["domain"])
+	if shown["stage"] != "done" {
+		t.Errorf("stage after update = %v, want done", shown["stage"])
 	}
-	mustRun(t, root, "organization", "archive", "acme-corp")
-}
-
-func TestDealRoundtrip(t *testing.T) {
-	root := initStore(t)
-	mustRun(t, root, "deal", "add", "--title", "Big Renewal", "--stage", "lead", "--value", "50000")
-	list := mustRun(t, root, "--format", "json", "deal", "list")
-	deals := decodeJSON(t, list)
-	if len(deals) != 1 {
-		t.Fatalf("expected 1 deal, got %d", len(deals))
-	}
-	id := deals[0]["id"].(string)
-	mustRun(t, root, "deal", "update", id, "--stage", "won")
-	mustRun(t, root, "deal", "archive", id)
-}
-
-func TestTaskRoundtrip(t *testing.T) {
-	root := initStore(t)
-	mustRun(t, root, "task", "add", "--title", "Follow up with Jane", "--priority", "high")
-	list := mustRun(t, root, "--format", "json", "task", "list")
-	tasks := decodeJSON(t, list)
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(tasks))
-	}
-	id := tasks[0]["id"].(string)
-	mustRun(t, root, "task", "update", id, "--priority", "medium")
-	mustRun(t, root, "task", "archive", id)
+	mustRun(t, root, "project", "archive", id)
 }
 
 // TestListGoldenShape asserts `person list --format json` matches the
@@ -248,15 +239,15 @@ func TestTaskRoundtrip(t *testing.T) {
 // can leak in from create-return paths.
 func TestListGoldenShape(t *testing.T) {
 	root := initStore(t)
-	mustRun(t, root, "person", "add", "--first-name", "Ana", "--last-name", "Zed", "--email", "ana@x")
-	mustRun(t, root, "person", "add", "--first-name", "Bob", "--last-name", "Roe", "--email", "bob@x")
+	mustRun(t, root, "person", "add", "--name", "Ana Zed", "--email", "ana@x")
+	mustRun(t, root, "person", "add", "--name", "Bob Roe", "--email", "bob@x")
 
 	list := mustRun(t, root, "--format", "json", "person", "list")
 	got := scrub(decodeJSON(t, list))
 
 	want := []map[string]any{
-		{"id": "ana-zed", "first_name": "Ana", "last_name": "Zed", "email": "ana@x"},
-		{"id": "bob-roe", "first_name": "Bob", "last_name": "Roe", "email": "bob@x"},
+		{"id": "ana-zed", "name": "Ana Zed", "email": "ana@x"},
+		{"id": "bob-roe", "name": "Bob Roe", "email": "bob@x"},
 	}
 	assertGoldenEqual(t, want, got)
 }
@@ -269,9 +260,9 @@ func TestListGoldenShape(t *testing.T) {
 func TestSlugCollisionSuffixesFilename(t *testing.T) {
 	root := initStore(t)
 	a := decodeJSON(t, mustRun(t, root, "--format", "json", "person", "add",
-		"--first-name", "Jane", "--last-name", "Smith", "--email", "jane1@x"))
+		"--name", "Jane Smith", "--email", "jane1@x"))
 	b := decodeJSON(t, mustRun(t, root, "--format", "json", "person", "add",
-		"--first-name", "Jane", "--last-name", "Smith", "--email", "jane2@x"))
+		"--name", "Jane Smith", "--email", "jane2@x"))
 
 	if a[0]["id"] != "jane-smith" {
 		t.Errorf("first slug = %v, want jane-smith", a[0]["id"])
@@ -288,12 +279,11 @@ func TestSlugCollisionSuffixesFilename(t *testing.T) {
 // invisible by design.
 func TestWikiLinksAliasToFirstSlug(t *testing.T) {
 	root := initStore(t)
-	mustRun(t, root, "person", "add", "--first-name", "Jane", "--last-name", "Smith", "--email", "a@x")
-	mustRun(t, root, "person", "add", "--first-name", "Jane", "--last-name", "Smith", "--email", "b@x")
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "a@x")
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "b@x")
 
-	mustRun(t, root, "deal", "add",
-		"--title", "Relate",
-		"--stage", "lead",
+	mustRun(t, root, "project", "add",
+		"--name", "Relate",
 		"--body", "Spoke with [[jane-smith]]; follow-up owed to [[jane-smith]].",
 	)
 
@@ -310,10 +300,9 @@ func TestWikiLinksAliasToFirstSlug(t *testing.T) {
 // surface it.
 func TestRenameSurfacesDanglingLinks(t *testing.T) {
 	root := initStore(t)
-	mustRun(t, root, "person", "add", "--first-name", "Jane", "--last-name", "Smith", "--email", "a@x")
-	mustRun(t, root, "deal", "add",
-		"--title", "Relate",
-		"--stage", "lead",
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "a@x")
+	mustRun(t, root, "project", "add",
+		"--name", "Relate",
 		"--body", "Ref [[jane-smith]].",
 	)
 
@@ -334,8 +323,8 @@ func TestRenameSurfacesDanglingLinks(t *testing.T) {
 
 func TestFormatParity(t *testing.T) {
 	root := initStore(t)
-	mustRun(t, root, "person", "add", "--first-name", "Jane", "--last-name", "Smith", "--email", "jane@example.com")
-	mustRun(t, root, "person", "add", "--first-name", "Bob", "--last-name", "Jones", "--email", "bob@example.com")
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "jane@example.com")
+	mustRun(t, root, "person", "add", "--name", "Bob Jones", "--email", "bob@example.com")
 
 	jsonOut := mustRun(t, root, "--format", "json", "person", "list")
 	if len(decodeJSON(t, jsonOut)) != 2 {
@@ -363,8 +352,8 @@ func TestFormatParity(t *testing.T) {
 
 func TestQuietEmitsIDsOnly(t *testing.T) {
 	root := initStore(t)
-	mustRun(t, root, "person", "add", "--first-name", "Jane", "--last-name", "Smith", "--email", "j@x")
-	mustRun(t, root, "person", "add", "--first-name", "Bob", "--last-name", "Jones", "--email", "b@x")
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "j@x")
+	mustRun(t, root, "person", "add", "--name", "Bob Jones", "--email", "b@x")
 
 	r := mustRun(t, root, "--quiet", "person", "list")
 	lines := strings.Split(strings.TrimSpace(r.stdout), "\n")
@@ -397,7 +386,7 @@ func TestUnknownSlugExit3(t *testing.T) {
 // constructed Ref{Type, Slug} with no Title at all.
 func TestOrphanTitlePopulated(t *testing.T) {
 	root := initStore(t)
-	mustRun(t, root, "person", "add", "--first-name", "Lonely", "--last-name", "Soul", "--email", "l@x")
+	mustRun(t, root, "person", "add", "--name", "Lonely Soul", "--email", "l@x")
 	r := mustRun(t, root, "--format", "json", "wiki", "orphans").stdout
 	if !strings.Contains(r, `"title":"Lonely Soul"`) {
 		t.Errorf("expected orphan title 'Lonely Soul', got: %s", r)
@@ -410,56 +399,55 @@ func TestOrphanTitlePopulated(t *testing.T) {
 // arg is bracket-wrapped) must still surface via `wiki backlinks`.
 //
 // Before the fix, entityDoc pushed the raw "[[slug]]" string into the
-// bleve links_to field — so Backlinks("acme-corp") missed the bracket-
-// wrapped entry. The contradicted doc claim is wiki/wiki.go:30
+// bleve links_to field — so Backlinks on the target missed the
+// bracket-wrapped entry. The contradicted doc claim is wiki/wiki.go:30
 // ("frontmatter or body").
 func TestFrontmatterLinkBacklinks(t *testing.T) {
 	root := initStore(t)
-	mustRun(t, root, "organization", "add", "--name", "Acme Corp", "--domain", "acme.test")
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "jane@x")
 	// Pass the wiki-wrapped form at the CLI — simulates a user who
 	// writes the frontmatter-native syntax and also matches the shape
 	// seeded by example/run.sh.
-	mustRun(t, root, "deal", "add",
-		"--title", "Acme Renewal",
-		"--stage", "lead",
-		"--org", "[[acme-corp]]",
+	mustRun(t, root, "project", "add",
+		"--name", "Launch Site",
+		"--lead", "[[jane-smith]]",
 	)
 	mustRun(t, root, "index", "rebuild")
-	backlinks := mustRun(t, root, "--format", "json", "wiki", "backlinks", "acme-corp").stdout
-	if !strings.Contains(backlinks, `"slug":"acme-renewal"`) {
-		t.Errorf("expected acme-renewal in backlinks, got: %s", backlinks)
+	backlinks := mustRun(t, root, "--format", "json", "wiki", "backlinks", "jane-smith").stdout
+	if !strings.Contains(backlinks, `"slug":"launch-site"`) {
+		t.Errorf("expected launch-site in backlinks, got: %s", backlinks)
 	}
 }
 
 // TestRequiredFieldWithDefaultSkipsFlagValidation pins the fix for
-// the required+default footgun: deal.stage is {required: true,
-// default: lead}, so `deal add --title X` (no --stage) must succeed
-// and the schema default must land in the record. Before the fix,
-// cobra rejected the command at flag-parse time with "required
+// the required+default footgun: project.stage is {required: true,
+// default: draft}, so `project add --name X` (no --stage) must
+// succeed and the schema default must land in the record. Before the
+// fix, cobra rejected the command at flag-parse time with "required
 // flag(s) stage not set" — defaults are applied later inside
 // store.Create, so requiring the flag made the default unreachable.
 func TestRequiredFieldWithDefaultSkipsFlagValidation(t *testing.T) {
 	root := initStore(t)
-	r := run(t, root, "--format", "json", "deal", "add", "--title", "Default Stage Deal")
+	r := run(t, root, "--format", "json", "project", "add", "--name", "Default Stage Project")
 	if r.exitCode != 0 {
-		t.Fatalf("deal add without --stage: exit %d\nstderr: %s", r.exitCode, r.stderr)
+		t.Fatalf("project add without --stage: exit %d\nstderr: %s", r.exitCode, r.stderr)
 	}
 	added := decodeJSON(t, r)
-	if added[0]["stage"] != "lead" {
-		t.Errorf("stage = %v, want lead (schema default)", added[0]["stage"])
+	if added[0]["stage"] != "draft" {
+		t.Errorf("stage = %v, want draft (schema default)", added[0]["stage"])
 	}
 }
 
 func TestValidationExit2(t *testing.T) {
 	root := initStore(t)
-	r := run(t, root, "deal", "add", "--title", "Bad Deal", "--stage", "not-a-stage")
+	r := run(t, root, "project", "add", "--name", "Bad Project", "--stage", "not-a-stage")
 	if r.exitCode != 2 {
 		t.Errorf("exit code = %d, want 2 (ErrValidation)\nstderr: %s", r.exitCode, r.stderr)
 	}
 }
 
-// TestDroppedCommandsAbsent pins the intentional parity gap with crm:
-// status, context, log, and deal-pipeline were removed during the
+// TestDroppedCommandsAbsent pins the intentional parity gap with
+// crm-cli: status, context, and log were removed during the
 // extraction. Scans --help text rather than running the commands —
 // cobra's default for an unknown subcommand under a parent with no
 // Run is "show help, exit 0", so exit-code probing is unreliable.
@@ -470,10 +458,6 @@ func TestDroppedCommandsAbsent(t *testing.T) {
 		if strings.Contains(rootHelp, "\n  "+cmd+" ") {
 			t.Errorf("dropped root command %q present in --help:\n%s", cmd, rootHelp)
 		}
-	}
-	dealHelp := mustRun(t, root, "deal", "--help").stdout
-	if strings.Contains(dealHelp, "\n  pipeline ") {
-		t.Errorf("dropped deal subcommand 'pipeline' present in deal --help:\n%s", dealHelp)
 	}
 }
 
@@ -506,7 +490,7 @@ func TestSchemaDescribeIsAgentLoadable(t *testing.T) {
 	if !ok {
 		t.Fatalf("entities key missing or wrong type: %v", desc)
 	}
-	for _, want := range []string{"person", "organization", "deal", "task"} {
+	for _, want := range []string{"person", "project"} {
 		if _, ok := entities[want]; !ok {
 			t.Errorf("entity %q missing from describe output", want)
 		}
@@ -516,11 +500,11 @@ func TestSchemaDescribeIsAgentLoadable(t *testing.T) {
 		t.Fatalf("person not an object")
 	}
 	fields, ok := person["frontmatter_fields"].(map[string]any)
-	if !ok || fields["first_name"] == nil {
-		t.Errorf("person.frontmatter_fields.first_name missing: %v", person)
+	if !ok || fields["name"] == nil {
+		t.Errorf("person.frontmatter_fields.name missing: %v", person)
 	}
 	if _, ok := person["sub_files"].(map[string]any); !ok {
-		t.Errorf("person.sub_files missing (should be empty object until commit 3): %v", person)
+		t.Errorf("person.sub_files missing (should be empty object for entities without files): %v", person)
 	}
 	cmds, ok := person["commands"].([]any)
 	if !ok || len(cmds) == 0 {
@@ -564,7 +548,7 @@ func TestWikiOrphansReturnsEmptyArrayNotNull(t *testing.T) {
 func TestNoAutoInjectedFrontmatterFields(t *testing.T) {
 	root := initStore(t)
 	mustRun(t, root, "person", "add",
-		"--first-name", "Jane", "--last-name", "Smith",
+		"--name", "Jane Smith",
 		"--email", "jane@example.com")
 
 	raw, err := os.ReadFile(filepath.Join(root, "people", "jane-smith", "index.md"))
@@ -578,56 +562,12 @@ func TestNoAutoInjectedFrontmatterFields(t *testing.T) {
 	}
 }
 
-// subFileFixtureSchema adds a `project` entity with typed sub-files to
-// the default CRM shape. Kept separate from fixtureSchema so existing
-// tests are untouched; only the sub-file roundtrip exercises this.
-const subFileFixtureSchema = `
-version: 1
-store:
-  runtime_dir: ".mdql"
-  archive_dir: "_archive"
-entities:
-  project:
-    dir: projects
-    title: "{{.name}}"
-    slug:  "{{.name}}"
-    fields:
-      name: {type: string, required: true}
-    files:
-      meeting:
-        dir: meetings
-        slug: "{{.date}}-{{.subject}}"
-        fields:
-          subject: {type: string, required: true}
-          date:    {type: string, required: true}
-      decision:
-        dir: decisions
-        slug: "{{.title}}"
-        fields:
-          title: {type: string, required: true}
-      note:
-        catchall: true
-        dir: notes
-        fields:
-          title: {type: string}
-`
-
-func initSubFileStore(t *testing.T) string {
-	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "schema.yml"), []byte(subFileFixtureSchema), 0o644); err != nil {
-		t.Fatalf("write schema.yml: %v", err)
-	}
-	mustRun(t, root, "init")
-	return root
-}
-
 // TestSubFileCRUDRoundtrip walks every verb of a sub-file kind via the
 // CLI: add → list → show → update → delete. Mirrors TestPersonRoundtrip
 // shape so the same kinds of drift (unregistered verb, missing command,
 // wrong arg count) surface the same way.
 func TestSubFileCRUDRoundtrip(t *testing.T) {
-	root := initSubFileStore(t)
+	root := initStore(t)
 	mustRun(t, root, "project", "add", "--name", "Launch Site")
 
 	add := mustRun(t, root, "--format", "json", "project", "meeting", "add", "launch-site",
@@ -673,7 +613,7 @@ func TestSubFileCRUDRoundtrip(t *testing.T) {
 // exit 1 — same failure mode that exists for entity commands with
 // required+no-default fields.
 func TestSubFileMissingRequiredFails(t *testing.T) {
-	root := initSubFileStore(t)
+	root := initStore(t)
 	mustRun(t, root, "project", "add", "--name", "Launch Site")
 	r := run(t, root, "project", "meeting", "add", "launch-site", "--date", "2026-04-17")
 	if r.exitCode == 0 {
@@ -690,7 +630,7 @@ func TestSubFileMissingRequiredFails(t *testing.T) {
 // the commit-3 contract: agents use this payload to learn the full
 // sub-file command surface without reading schema.yml directly.
 func TestSchemaDescribePopulatesSubFiles(t *testing.T) {
-	root := initSubFileStore(t)
+	root := initStore(t)
 	r := mustRun(t, root, "schema", "describe")
 
 	var desc map[string]any
@@ -731,7 +671,7 @@ func TestSchemaDescribePopulatesSubFiles(t *testing.T) {
 // root-relative path/fields. Body is intentionally absent — the graph
 // is metadata; drill down via `project meeting show` for body.
 func TestProjectShowReturnsSubFileGraph(t *testing.T) {
-	root := initSubFileStore(t)
+	root := initStore(t)
 	mustRun(t, root, "project", "add", "--name", "Launch Site")
 	mustRun(t, root, "project", "meeting", "add", "launch-site", "--subject", "kickoff", "--date", "2026-04-17")
 	mustRun(t, root, "project", "meeting", "add", "launch-site", "--subject", "review", "--date", "2026-04-20")
@@ -776,7 +716,7 @@ func TestProjectShowReturnsSubFileGraph(t *testing.T) {
 func TestEntityWithoutSubFilesHasNoSubFilesKey(t *testing.T) {
 	root := initStore(t)
 	mustRun(t, root, "person", "add",
-		"--first-name", "Jane", "--last-name", "Smith",
+		"--name", "Jane Smith",
 		"--email", "jane@example.com")
 	r := mustRun(t, root, "--format", "json", "person", "show", "jane-smith")
 	obj := decodeJSONObject(t, r)
@@ -789,7 +729,7 @@ func TestEntityWithoutSubFilesHasNoSubFilesKey(t *testing.T) {
 // entity exposes the sub-file kinds as subcommands under that entity —
 // so `mdql project --help` lists `meeting`, `decision`, `note`.
 func TestSubFileCommandsInEntityHelp(t *testing.T) {
-	root := initSubFileStore(t)
+	root := initStore(t)
 	help := mustRun(t, root, "project", "--help").stdout
 	for _, want := range []string{"meeting", "decision", "note"} {
 		if !strings.Contains(help, want) {
