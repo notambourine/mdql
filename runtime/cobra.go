@@ -95,7 +95,7 @@ func registerEntity(root *cobra.Command, kind string, entity schema.Entity, open
 
 	parent.AddCommand(entityAddCmd(kind, entity, cols, opener, g))
 	parent.AddCommand(entityListCmd(kind, cols, opener, g))
-	parent.AddCommand(entityShowCmd(kind, cols, opener, g))
+	parent.AddCommand(entityShowCmd(kind, entity, cols, opener, g))
 	if !entity.AppendOnly {
 		parent.AddCommand(entityUpdateCmd(kind, entity, cols, opener, g))
 	}
@@ -160,7 +160,7 @@ func entityListCmd(kind string, cols []format.ColumnDef, opener storeOpener, g *
 	return cmd
 }
 
-func entityShowCmd(kind string, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
+func entityShowCmd(kind string, entity schema.Entity, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <slug>",
 		Short: "show " + kind,
@@ -175,9 +175,45 @@ func entityShowCmd(kind string, cols []format.ColumnDef, opener storeOpener, g *
 			if err != nil {
 				return err
 			}
+			if entity.IsSprawl() && len(entity.Files) > 0 {
+				subs, err := store.ListSubFileGraph(cmd.Context(), kind, args[0])
+				if err != nil {
+					return err
+				}
+				rec["sub_files"] = subFileGraphView(store.Root(), subs)
+			}
 			return renderRecord(g, cols, rec)
 		},
 	}
+}
+
+// subFileGraphItem is the JSON shape for one sub-file embedded in an
+// entity `show` payload. Path is root-relative so goldens and agents
+// get stable values across store locations. Body is intentionally
+// omitted — the graph is a directory, not the full documents; drill
+// down via `<entity> <subkind> show` for body content.
+type subFileGraphItem struct {
+	Kind   string         `json:"kind"`
+	Slug   string         `json:"slug"`
+	Path   string         `json:"path"`
+	Fields map[string]any `json:"fields"`
+}
+
+func subFileGraphView(root string, recs []md.SubFileRecord) []subFileGraphItem {
+	out := make([]subFileGraphItem, 0, len(recs))
+	for _, r := range recs {
+		rel, err := filepath.Rel(root, r.Path)
+		if err != nil {
+			rel = r.Path
+		}
+		out = append(out, subFileGraphItem{
+			Kind:   r.Kind,
+			Slug:   r.Slug,
+			Path:   rel,
+			Fields: r.Fields,
+		})
+	}
+	return out
 }
 
 func entityUpdateCmd(kind string, entity schema.Entity, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {

@@ -725,6 +725,66 @@ func TestSchemaDescribePopulatesSubFiles(t *testing.T) {
 	}
 }
 
+// TestProjectShowReturnsSubFileGraph pins Wave D of commit 3: `<kind>
+// show --format json` on a sprawl entity returns a `sub_files` array
+// containing every declared sub-file of the parent, with kind/slug/
+// root-relative path/fields. Body is intentionally absent — the graph
+// is metadata; drill down via `project meeting show` for body.
+func TestProjectShowReturnsSubFileGraph(t *testing.T) {
+	root := initSubFileStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site")
+	mustRun(t, root, "project", "meeting", "add", "launch-site", "--subject", "kickoff", "--date", "2026-04-17")
+	mustRun(t, root, "project", "meeting", "add", "launch-site", "--subject", "review", "--date", "2026-04-20")
+	mustRun(t, root, "project", "decision", "add", "launch-site", "--title", "use-tailwind")
+
+	r := mustRun(t, root, "--format", "json", "project", "show", "launch-site")
+	obj := decodeJSONObject(t, r)
+	subsAny, ok := obj["sub_files"].([]any)
+	if !ok {
+		t.Fatalf("sub_files missing or wrong type: %T %v", obj["sub_files"], obj["sub_files"])
+	}
+	if len(subsAny) != 3 {
+		t.Fatalf("sub_files: got %d, want 3\n%v", len(subsAny), subsAny)
+	}
+	// ForEachSubFile sorts by (kind, slug): decision < meeting alphabetically.
+	wantKinds := []string{"decision", "meeting", "meeting"}
+	for i, item := range subsAny {
+		m := item.(map[string]any)
+		if m["kind"] != wantKinds[i] {
+			t.Errorf("sub_files[%d].kind = %v, want %v", i, m["kind"], wantKinds[i])
+		}
+		if m["slug"] == "" || m["slug"] == nil {
+			t.Errorf("sub_files[%d].slug missing", i)
+		}
+		path, _ := m["path"].(string)
+		if path == "" || filepath.IsAbs(path) {
+			t.Errorf("sub_files[%d].path = %q, want non-empty and root-relative", i, path)
+		}
+		if _, ok := m["fields"].(map[string]any); !ok {
+			t.Errorf("sub_files[%d].fields missing: %v", i, m)
+		}
+		if _, has := m["body"]; has {
+			t.Errorf("sub_files[%d] should not include body: %v", i, m)
+		}
+	}
+}
+
+// TestEntityWithoutSubFilesHasNoSubFilesKey pins the other side of
+// Wave D: an entity that declares no `files:` in its schema must NOT
+// have a `sub_files` key on its `show --format json` output. Absence
+// is the agent's signal that the entity has no child documents.
+func TestEntityWithoutSubFilesHasNoSubFilesKey(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "person", "add",
+		"--first-name", "Jane", "--last-name", "Smith",
+		"--email", "jane@example.com")
+	r := mustRun(t, root, "--format", "json", "person", "show", "jane-smith")
+	obj := decodeJSONObject(t, r)
+	if _, has := obj["sub_files"]; has {
+		t.Errorf("flat person has sub_files key: %v", obj)
+	}
+}
+
 // TestSubFileCommandsInEntityHelp pins that declaring `files:` on an
 // entity exposes the sub-file kinds as subcommands under that entity —
 // so `mdql project --help` lists `meeting`, `decision`, `note`.

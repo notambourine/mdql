@@ -294,6 +294,35 @@ func (s *Store) GetSubFile(ctx context.Context, parentKind, parentSlug, subKind,
 	}, nil
 }
 
+// ListSubFileGraph returns every sub-file under parentSlug across all
+// declared sub-file kinds, in (kind, slug) order. Used by entity `show`
+// to compose the full child-document graph for a parent entity; agents
+// get one call that reveals the whole structure.
+func (s *Store) ListSubFileGraph(ctx context.Context, parentKind, parentSlug string) ([]SubFileRecord, error) {
+	if err := ctxErr(ctx); err != nil {
+		return nil, err
+	}
+	entity, ok := s.schema.Entities[parentKind]
+	if !ok {
+		return nil, fmt.Errorf("unknown entity kind %q", parentKind)
+	}
+	if !entity.IsSprawl() {
+		return nil, nil
+	}
+	var out []SubFileRecord
+	err := s.ForEachSubFile(parentKind, parentSlug, "", func(rec SubFileRecord, _, _ []byte) error {
+		if err := ctxErr(ctx); err != nil {
+			return err
+		}
+		out = append(out, rec)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ListSubFiles returns every record of subKind under parentSlug.
 func (s *Store) ListSubFiles(ctx context.Context, parentKind, parentSlug, subKind string) ([]SubFileRecord, error) {
 	if err := ctxErr(ctx); err != nil {
