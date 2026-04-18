@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# example/run.sh — regenerate ./out/ goldens (default) or --check them.
+# examples/crm/run.sh — regenerate ./out/ goldens (default) or --check them.
 #
 # Default mode wipes the working store (people/ projects/ _archive/ .mdql/
 # out/) and re-seeds it by running ~35 mdql commands against a freshly
@@ -30,7 +30,7 @@ fi
 BIN_DIR="$(mktemp -d)"
 trap 'rm -rf "$BIN_DIR" "${CHECK_DIR:-}"' EXIT
 BIN="$BIN_DIR/mdql"
-( cd .. && go build -o "$BIN" ./cmd/mdql )
+( cd ../.. && go build -o "$BIN" ./cmd/mdql )
 
 # Resolve working root and out directory.
 if [[ "$MODE" == "check" ]]; then
@@ -196,10 +196,10 @@ capture 92-err-required.out    project meeting add launch-site --date 2026-04-15
 # ── check mode: diff $OUT against the committed ./out/ ───────────────
 if [[ "$MODE" == "check" ]]; then
     if diff -ru "$EXAMPLE_DIR/out" "$OUT" > "$BIN_DIR/diff.out"; then
-        echo "example/out/: in sync"
+        echo "examples/crm/out/: in sync"
         exit 0
     else
-        echo "example/out/: drift detected" >&2
+        echo "examples/crm/out/: drift detected" >&2
         cat "$BIN_DIR/diff.out" >&2
         exit 1
     fi

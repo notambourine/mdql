@@ -408,7 +408,7 @@ func TestFrontmatterLinkBacklinks(t *testing.T) {
 	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "jane@x")
 	// Pass the wiki-wrapped form at the CLI — simulates a user who
 	// writes the frontmatter-native syntax and also matches the shape
-	// seeded by example/run.sh.
+	// seeded by examples/crm/run.sh.
 	mustRun(t, root, "project", "add",
 		"--name", "Launch Site",
 		"--lead", "[[jane-smith]]",

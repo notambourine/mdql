@@ -1,4 +1,8 @@
-# mdql by example — project + typed sub-files
+# examples/crm — person + project + typed sub-files
+
+A small team CRM: people, projects they own, meetings/decisions/milestones
+as typed sub-files under each project. Closest to the `crm-cli` shape mdql
+was extracted from.
 
 This directory is a runnable README. A ~50-line [`schema.yml`](schema.yml)
 defines two entities (`person`, `project`) where `project` owns four
@@ -50,7 +54,7 @@ entry in [`15-project-show.out`](out/15-project-show.out).
 ## Layout
 
 ```
-example/
+examples/crm/
 ├── schema.yml              # single source of truth
 ├── run.sh                  # regenerator / --check harness
 ├── people/{slug}/index.md  # one folder per person

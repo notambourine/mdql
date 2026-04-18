@@ -14,6 +14,7 @@ Flags:
 
 Global Flags:
   -f, --format string   output: table|json|csv|tsv
+      --no-sync         skip stale-index check on open
   -q, --quiet           IDs only
       --root string     store root (default ".")
       --schema string   schema file path (default "./schema.yml")

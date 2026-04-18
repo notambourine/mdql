@@ -16,4 +16,4 @@ jobs:
       - name: go test
         run: go test ./...
       - name: example goldens in sync
-        run: bash example/run.sh --check
+        run: bash examples/crm/run.sh --check

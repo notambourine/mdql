@@ -19,6 +19,7 @@ Available Commands:
 Flags:
   -f, --format string   output: table|json|csv|tsv
   -h, --help            help for mdql
+      --no-sync         skip stale-index check on open
   -q, --quiet           IDs only
       --root string     store root (default ".")
       --schema string   schema file path (default "./schema.yml")

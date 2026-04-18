@@ -24,6 +24,7 @@ type globals struct {
 	root   string
 	format string
 	quiet  bool
+	noSync bool
 	// schema is bound so `--schema` shows up in `mdql --help`. The
 	// value isn't read here — the binary's main() pre-parses --schema
 	// from os.Args to build this very command tree. Registering it on
@@ -57,6 +58,7 @@ func BuildRootCmd(s *schema.Schema) *cobra.Command {
 	root.PersistentFlags().StringVarP(&g.format, "format", "f", "", "output: table|json|csv|tsv")
 	root.PersistentFlags().BoolVarP(&g.quiet, "quiet", "q", false, "IDs only")
 	root.PersistentFlags().StringVar(&g.schema, "schema", "./schema.yml", "schema file path")
+	root.PersistentFlags().BoolVar(&g.noSync, "no-sync", false, "skip stale-index check on open")
 
 	opener := func(ctx context.Context) (*md.Store, *search.Index, func(), error) {
 		abs, err := filepath.Abs(g.root)
@@ -71,6 +73,12 @@ func BuildRootCmd(s *schema.Schema) *cobra.Command {
 		if err != nil {
 			_ = idx.Close()
 			return nil, nil, nil, err
+		}
+		if !g.noSync {
+			if _, err := store.SyncIfStale(ctx); err != nil {
+				_ = idx.Close()
+				return nil, nil, nil, fmt.Errorf("sync index: %w", err)
+			}
 		}
 		return store, idx, func() { _ = store.Close(); _ = idx.Close() }, nil
 	}

@@ -1,0 +1,26 @@
+version: 1
+store:
+  runtime_dir: ".mdql"
+  archive_dir: "_archive"
+
+entities:
+  note:
+    dir: notes
+    title: "{{.title}}"
+    slug:  "{{.title}}"
+    fields:
+      title:  {type: string, required: true}
+      tags:   {type: "string[]", sorted: true}
+      source: {type: link, target: source}
+      status: {type: enum, values: [fleeting, literature, permanent], default: fleeting}
+
+  source:
+    dir: sources
+    title: "{{.title}}"
+    slug:  "{{.title}}"
+    fields:
+      title:  {type: string, required: true}
+      author: {type: string}
+      kind:   {type: enum, values: [book, article, talk, other], required: true, default: article}
+      year:   {type: string}
+      tags:   {type: "string[]", sorted: true}

@@ -1,0 +1,41 @@
+version: 1
+store:
+  runtime_dir: ".mdql"
+  archive_dir: "_archive"
+
+entities:
+  person:
+    dir: people
+    title: "{{.name}}"
+    slug:  "{{.name}}"
+    fields:
+      name:  {type: string, required: true}
+      email: {type: string, unique: true}
+
+  project:
+    dir: projects
+    title: "{{.name}}"
+    slug:  "{{.name}}"
+    fields:
+      name:   {type: string, required: true}
+      status: {type: enum, values: [planned, active, shipped, cancelled], default: planned}
+
+  task:
+    dir: tasks
+    title: "{{.title}}"
+    slug:  "{{.title}}"
+    fields:
+      title:    {type: string, required: true}
+      status:   {type: enum, values: [todo, doing, done, blocked], required: true, default: todo}
+      priority: {type: enum, values: [p0, p1, p2, p3], default: p2}
+      project:  {type: link, target: project}
+      assignee: {type: link, target: person}
+      due:      {type: string}
+      tags:     {type: "string[]", sorted: true}
+    files:
+      comment:
+        dir: comments
+        slug: "{{.date}}-{{.author}}"
+        fields:
+          author: {type: string, required: true}
+          date:   {type: string, required: true}

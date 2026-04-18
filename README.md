@@ -22,10 +22,10 @@ Get typed CRUD, full-text search, and `[[wiki]]` backlinks for free:
 
 ```bash
 mdql init
-mdql book add "A Pattern Language" --author christopher-alexander --rating done
+mdql book add --title "A Pattern Language" --author christopher-alexander --rating done
 mdql search "pattern"
 mdql wiki backlinks christopher-alexander
-mdql list book --format json | jq '.[] | select(.rating == "done")'
+mdql book list --format json | jq '.[] | select(.rating == "done")'
 ```
 
 ## Why
