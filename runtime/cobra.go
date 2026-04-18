@@ -102,6 +102,7 @@ func registerEntity(root *cobra.Command, kind string, entity schema.Entity, open
 	if entity.IsArchivable() {
 		parent.AddCommand(entityArchiveCmd(kind, opener))
 	}
+	registerSubFiles(parent, kind, entity, opener, g)
 	root.AddCommand(parent)
 }
 

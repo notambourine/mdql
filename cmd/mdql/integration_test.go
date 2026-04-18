@@ -578,6 +578,125 @@ func TestNoAutoInjectedFrontmatterFields(t *testing.T) {
 	}
 }
 
+// subFileFixtureSchema adds a `project` entity with typed sub-files to
+// the default CRM shape. Kept separate from fixtureSchema so existing
+// tests are untouched; only the sub-file roundtrip exercises this.
+const subFileFixtureSchema = `
+version: 1
+store:
+  runtime_dir: ".mdql"
+  archive_dir: "_archive"
+entities:
+  project:
+    dir: projects
+    title: "{{.name}}"
+    slug:  "{{.name}}"
+    fields:
+      name: {type: string, required: true}
+    files:
+      meeting:
+        dir: meetings
+        slug: "{{.date}}-{{.subject}}"
+        fields:
+          subject: {type: string, required: true}
+          date:    {type: string, required: true}
+      decision:
+        dir: decisions
+        slug: "{{.title}}"
+        fields:
+          title: {type: string, required: true}
+      note:
+        catchall: true
+        dir: notes
+        fields:
+          title: {type: string}
+`
+
+func initSubFileStore(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "schema.yml"), []byte(subFileFixtureSchema), 0o644); err != nil {
+		t.Fatalf("write schema.yml: %v", err)
+	}
+	mustRun(t, root, "init")
+	return root
+}
+
+// TestSubFileCRUDRoundtrip walks every verb of a sub-file kind via the
+// CLI: add → list → show → update → delete. Mirrors TestPersonRoundtrip
+// shape so the same kinds of drift (unregistered verb, missing command,
+// wrong arg count) surface the same way.
+func TestSubFileCRUDRoundtrip(t *testing.T) {
+	root := initSubFileStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site")
+
+	add := mustRun(t, root, "--format", "json", "project", "meeting", "add", "launch-site",
+		"--subject", "kickoff", "--date", "2026-04-17")
+	added := decodeJSON(t, add)
+	if added[0]["id"] != "2026-04-17-kickoff" {
+		t.Errorf("sub-file slug = %v, want 2026-04-17-kickoff", added[0]["id"])
+	}
+
+	mustRun(t, root, "project", "meeting", "add", "launch-site",
+		"--subject", "review", "--date", "2026-04-20")
+
+	list := mustRun(t, root, "--format", "json", "project", "meeting", "list", "launch-site")
+	items := decodeJSON(t, list)
+	if len(items) != 2 {
+		t.Fatalf("meeting list: got %d, want 2\n%s", len(items), list.stdout)
+	}
+
+	show := mustRun(t, root, "--format", "json", "project", "meeting", "show", "launch-site", "2026-04-17-kickoff")
+	shown := decodeJSONObject(t, show)
+	if shown["subject"] != "kickoff" {
+		t.Errorf("subject = %v, want kickoff", shown["subject"])
+	}
+
+	mustRun(t, root, "project", "meeting", "update", "launch-site", "2026-04-17-kickoff",
+		"--subject", "kickoff-v2")
+	show = mustRun(t, root, "--format", "json", "project", "meeting", "show", "launch-site", "2026-04-17-kickoff")
+	shown = decodeJSONObject(t, show)
+	if shown["subject"] != "kickoff-v2" {
+		t.Errorf("subject after update = %v, want kickoff-v2", shown["subject"])
+	}
+
+	mustRun(t, root, "project", "meeting", "delete", "launch-site", "2026-04-17-kickoff")
+	r := run(t, root, "project", "meeting", "show", "launch-site", "2026-04-17-kickoff")
+	if r.exitCode != 3 {
+		t.Errorf("post-delete show: exit %d, want 3 (ErrNotFound)", r.exitCode)
+	}
+}
+
+// TestSubFileMissingRequiredFails pins that a missing required field
+// rejects the command. Cobra's own MarkFlagRequired fires before RunE,
+// so this surfaces as a cobra-style "required flag not set" error at
+// exit 1 — same failure mode that exists for entity commands with
+// required+no-default fields.
+func TestSubFileMissingRequiredFails(t *testing.T) {
+	root := initSubFileStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site")
+	r := run(t, root, "project", "meeting", "add", "launch-site", "--date", "2026-04-17")
+	if r.exitCode == 0 {
+		t.Errorf("expected failure, got exit 0\nstdout: %s\nstderr: %s", r.stdout, r.stderr)
+	}
+	if !strings.Contains(r.stderr, "subject") {
+		t.Errorf("stderr should mention the missing `subject` field, got: %s", r.stderr)
+	}
+}
+
+// TestSubFileCommandsInEntityHelp pins that declaring `files:` on an
+// entity exposes the sub-file kinds as subcommands under that entity —
+// so `mdql project --help` lists `meeting`, `decision`, `note`.
+func TestSubFileCommandsInEntityHelp(t *testing.T) {
+	root := initSubFileStore(t)
+	help := mustRun(t, root, "project", "--help").stdout
+	for _, want := range []string{"meeting", "decision", "note"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("project --help missing sub-file kind %q:\n%s", want, help)
+		}
+	}
+}
+
 // assertGoldenEqual compares two record lists field-by-field for the
 // keys present in want. Extra keys in got (e.g. optional fields) are
 // ignored so the golden doesn't have to enumerate every schema field.
