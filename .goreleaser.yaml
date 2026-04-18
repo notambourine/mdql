@@ -1,0 +1,59 @@
+version: 2
+
+project_name: mdql
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: mdql
+    main: ./cmd/mdql
+    binary: mdql
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+
+archives:
+  - id: mdql
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - name: mdql
+    repository:
+      owner: notambourine
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/notambourine/mdql
+    description: Schema-driven CRUD + FTS + wiki graph over markdown notes
+    license: MIT
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "mdql {{ .Tag }}"
+    test: |
+      assert_match "schema-driven", shell_output("#{bin}/mdql 2>&1")
+    install: |
+      bin.install "mdql"
