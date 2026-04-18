@@ -394,6 +394,10 @@ func (s *Store) readMap(kind, slug, path string) (map[string]any, error) {
 	return rec, nil
 }
 
+// KEY-DECISION 2026-04-17: stripping bodyKey here (not just id) lets
+// the before-snapshot from a fresh readMap reuse this helper cleanly.
+// Write paths already delete bodyKey before calling in, so the extra
+// strip is a no-op there; dry-run Before blocks get clean frontmatter.
 // frontmatterOnly returns a copy of rec with reserved meta keys
 // stripped. Filename is the canonical id; body is rendered separately
 // under the --- fence — neither belongs in the frontmatter block on
