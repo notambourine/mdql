@@ -1,5 +1,5 @@
 ---
+lead: '[[ana-ray]]'
 name: Launch Site
-owner: '[[ana-ray]]'
-status: active
+stage: done
 ---

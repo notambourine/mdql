@@ -1,0 +1,22 @@
+manage project/meeting
+
+Usage:
+  mdql project meeting [command]
+
+Available Commands:
+  add         create project/meeting
+  delete      delete project/meeting
+  list        list project/meeting
+  show        show project/meeting
+  update      update project/meeting
+
+Flags:
+  -h, --help   help for meeting
+
+Global Flags:
+  -f, --format string   output: table|json|csv|tsv
+  -q, --quiet           IDs only
+      --root string     store root (default ".")
+      --schema string   schema file path (default "./schema.yml")
+
+Use "mdql project meeting [command] --help" for more information about a command.

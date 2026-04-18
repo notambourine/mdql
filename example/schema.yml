@@ -4,16 +4,6 @@ store:
   archive_dir: "_archive"
 
 entities:
-  project:
-    dir: projects
-    title: "{{.name}}"
-    slug:  "{{.name}}"
-    fields:
-      name:        {type: string, required: true}
-      status:      {type: enum, values: [active, paused, done], required: true, default: active}
-      owner:       {type: link, target: person}
-      tags:        {type: "string[]", sorted: true}
-
   person:
     dir: people
     title: "{{.name}}"
@@ -21,17 +11,38 @@ entities:
     fields:
       name:  {type: string, required: true}
       email: {type: string, unique: true}
+      role:  {type: enum, values: [ic, lead, exec], required: true, default: ic}
       tags:  {type: "string[]", sorted: true}
 
-  issue:
-    dir: issues
-    title: "{{.title}}"
-    slug:  "{{.title}}"
+  project:
+    dir: projects
+    title: "{{.name}}"
+    slug:  "{{.name}}"
     fields:
-      title:    {type: string, required: true}
-      project:  {type: link, target: project, required: true}
-      assignee: {type: link, target: person}
-      priority: {type: enum, values: [low, medium, high], default: medium}
-      points:   {type: int}
-      open:     {type: bool, default: true}
-      tags:     {type: "string[]", sorted: true}
+      name:  {type: string, required: true}
+      stage: {type: enum, values: [draft, active, done], required: true, default: draft}
+      lead:  {type: link, target: person}
+      tags:  {type: "string[]", sorted: true}
+    files:
+      meeting:
+        dir: meetings
+        slug: "{{.date}}-{{.subject}}"
+        fields:
+          subject: {type: string, required: true}
+          date:    {type: string, required: true}
+      decision:
+        dir: decisions
+        slug: "{{.title}}"
+        fields:
+          title: {type: string, required: true}
+      milestone:
+        dir: milestones
+        slug: "{{.name}}"
+        fields:
+          name: {type: string, required: true}
+          due:  {type: string}
+      note:
+        catchall: true
+        dir: notes
+        fields:
+          title: {type: string}

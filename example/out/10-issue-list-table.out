@@ -1,7 +1,0 @@
-┌────────────────────┬───────────────┬──────┬────────┬──────────┬─────────────────┬────────────────────┐
-│ ID                 │ ASSIGNEE      │ OPEN │ POINTS │ PRIORITY │ PROJECT         │ TITLE              │
-├────────────────────┼───────────────┼──────┼────────┼──────────┼─────────────────┼────────────────────┤
-│ add-analytics      │               │ true │ 3      │ medium   │ [[launch-site]] │ Add analytics      │
-│ fix-nav-overflow   │ [[bob-quinn]] │ true │ 5      │ high     │ [[launch-site]] │ Fix nav overflow   │
-│ write-landing-copy │ [[ana-ray]]   │ true │ 5      │ high     │ [[launch-site]] │ Write landing copy │
-└────────────────────┴───────────────┴──────┴────────┴──────────┴─────────────────┴────────────────────┘

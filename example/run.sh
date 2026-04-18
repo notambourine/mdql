@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # example/run.sh — regenerate ./out/ goldens (default) or --check them.
 #
-# Default mode wipes the working store (people/ projects/ issues/
-# _archive/ .mdql/ out/) and re-seeds it by running ~35 mdql commands
-# against a freshly built binary, capturing stdout+stderr to out/NN-*.out.
+# Default mode wipes the working store (people/ projects/ _archive/ .mdql/
+# out/) and re-seeds it by running ~35 mdql commands against a freshly
+# built binary, capturing stdout+stderr to out/NN-*.out.
 #
 # --check mode regenerates into a tempdir and diffs the output against
 # the committed ./out/. Exits 1 on drift (for CI), 0 when in sync.
@@ -42,7 +42,7 @@ if [[ "$MODE" == "check" ]]; then
 else
     ROOT="$EXAMPLE_DIR"
     OUT="$EXAMPLE_DIR/out"
-    rm -rf "$ROOT/people" "$ROOT/projects" "$ROOT/issues" \
+    rm -rf "$ROOT/people" "$ROOT/projects" \
            "$ROOT/_archive" "$ROOT/.mdql" "$OUT"
     mkdir -p "$OUT"
 fi
@@ -70,66 +70,86 @@ capture_file() {
 # ── seed ─────────────────────────────────────────────────────────────
 capture 01-init.out init
 
-capture 02-person-add-ana.out --format json person add --name "Ana Ray"   --email ana@example.com
+capture 02-person-add-ana.out --format json person add --name "Ana Ray"   --email ana@example.com --role lead
 capture 03-person-add-bob.out --format json person add --name "Bob Quinn" --email bob@example.com
 
-capture 04-project-add.out    --format json project add --name "Launch Site" --owner "[[ana-ray]]"
+capture 04-project-add.out    --format json project add --name "Launch Site" --lead "[[ana-ray]]" --stage active
 
-capture 05-issue-add-1.out --format json issue add \
-    --title "Fix nav overflow"   --project "[[launch-site]]" \
-    --assignee "[[bob-quinn]]"   --priority high --points 5
-capture 06-issue-add-2.out --format json issue add \
-    --title "Write landing copy" --project "[[launch-site]]" \
-    --assignee "[[ana-ray]]"     --priority high --points 5
-capture 07-issue-add-3.out --format json issue add \
-    --title "Add analytics"      --project "[[launch-site]]" \
-    --priority medium --points 3 --body "Owners: [[ana-ray]]"
+# ── sub-files: meetings / decisions / milestones / notes ─────────────
+capture 05-meeting-add-1.out --format json project meeting add launch-site \
+    --date 2026-04-01 --subject "Kickoff"
+capture 06-meeting-add-2.out --format json project meeting add launch-site \
+    --date 2026-04-08 --subject "Copy Review"
+
+capture 07-decision-add.out  --format json project decision add launch-site \
+    --title "Use Sprawl Layout"
+capture 08-milestone-add.out --format json project milestone add launch-site \
+    --name "Beta Launch" --due 2026-05-15
+
+# Catchall demo: a loose .md file sitting directly under the project dir
+# is attributed to the `note` kind by the graph (schema-defined dir doesn't
+# matter — any untyped .md under the project folder is absorbed).
+cat > "$ROOT/projects/launch-site/open-questions.md" <<'EOF'
+---
+title: Open Questions
+---
+Will we need an SSO provider before beta?
+EOF
+capture_file 09-loose-note.out projects/launch-site/open-questions.md
 
 # ── list ─────────────────────────────────────────────────────────────
-capture 10-issue-list-table.out         --format table issue list
-capture 11-issue-list-default-pipe.out                 issue list
-capture 11-issue-list-json.out          --format json  issue list
-capture 12-issue-list-csv.out           --format csv   issue list
-capture 13-issue-list-tsv.out           --format tsv   issue list
-capture 14-issue-list-quiet.out         --quiet        issue list
+capture 10-project-list-table.out         --format table project list
+capture 11-project-list-default-pipe.out                 project list
+capture 11-project-list-json.out          --format json  project list
+capture 12-project-list-csv.out           --format csv   project list
+capture 13-project-list-tsv.out           --format tsv   project list
+capture 14-project-list-quiet.out         --quiet        project list
 
-capture 15-issue-show.out               --format json  issue show fix-nav-overflow
+# headline: project show now returns the sub-file graph alongside fields
+capture 15-project-show.out               --format json  project show launch-site
+
+capture 16-meeting-list.out               --format json  project meeting list launch-site
+capture 17-meeting-show.out               --format json  project meeting show launch-site 2026-04-01-kickoff
 
 # ── update ───────────────────────────────────────────────────────────
-capture 20-issue-update.out             --format json  issue update fix-nav-overflow --priority medium
-capture 21-issue-show-updated.out       --format json  issue show   fix-nav-overflow
+capture 20-project-update.out             --format json  project update launch-site --stage done
+capture 21-project-show-updated.out       --format json  project show   launch-site
+capture 22-meeting-update.out             --format json  project meeting update launch-site 2026-04-08-copy-review --subject "Copy Review v2"
 
 # ── search ───────────────────────────────────────────────────────────
-capture 30-search-landing.out           --format json  search landing
-capture 31-search-type-filter.out       --format json  search landing --type issue
+capture 30-search-launch.out              --format json  search launch
+capture 31-search-type-filter.out         --format json  search launch --type project
 
-# ── wiki (40- bug 2 fix now surfaces issue refs for launch-site) ─────
+# ── wiki ─────────────────────────────────────────────────────────────
 capture 40-wiki-backlinks-ana.out         --format json wiki backlinks ana-ray
 capture 41-wiki-orphans.out               --format json wiki orphans
 capture 42-wiki-dangling.out              --format json wiki dangling
 capture 43-wiki-backlinks-launch-site.out --format json wiki backlinks launch-site
 
 # ── tag ──────────────────────────────────────────────────────────────
-capture 50-tag-list.out                 --format json  tag list
+capture 50-tag-list.out                   --format json tag list
 
 # ── archive ──────────────────────────────────────────────────────────
-capture 60-issue-archive.out            issue archive add-analytics
-capture 61-issue-list-after-archive.out --format json issue list
+capture 60-person-archive.out             person archive bob-quinn
+capture 61-person-list-after-archive.out  --format json person list
 
 # ── index ────────────────────────────────────────────────────────────
-capture 62-index-rebuild.out            index rebuild
+capture 62-index-rebuild.out              index rebuild
 
 # ── help ─────────────────────────────────────────────────────────────
-capture 70-help.out                     --help
-capture 71-issue-help.out               issue --help
-capture 72-issue-add-help.out           issue add --help
+capture 70-help.out                       --help
+capture 71-project-help.out               project --help
+capture 72-project-add-help.out           project add --help
+capture 73-project-meeting-help.out       project meeting --help
+capture 74-project-meeting-add-help.out   project meeting add --help
 
 # ── on-disk shape ────────────────────────────────────────────────────
 # Sprawl layout: {dir}/{slug}/index.md is the canonical frontmatter file;
-# sibling files (meetings, decisions, notes) can live alongside it.
+# typed sub-files live in {dir}/{slug}/{subdir}/{sub-slug}.md.
 capture_file 80-file-person-ana.out people/ana-ray/index.md
 capture_file 81-file-project.out    projects/launch-site/index.md
-capture_file 82-file-issue.out      issues/write-landing-copy/index.md
+capture_file 82-file-meeting.out    projects/launch-site/meetings/2026-04-01-kickoff.md
+capture_file 83-file-milestone.out  projects/launch-site/milestones/beta-launch.md
 
 # tree — on-disk store shape (schema + entity dirs + archive). Excludes
 # runtime index, goldens, harness files so the same tree renders in both
@@ -144,13 +164,15 @@ capture_file 82-file-issue.out      issues/write-landing-copy/index.md
         -not -name '.gitignore' \
         -not -name '.DS_Store' \
         | sort )
-} > "$OUT/83-tree.out"
+} > "$OUT/84-tree.out"
 
-# ── errors (92- repurposed after bug 1 fix: --project is required with
-#    no default, so omitting it still produces the required-flag error)
-capture 90-err-validation.out  issue update fix-nav-overflow --priority nope
-capture 91-err-notfound.out    issue show  ghost
-capture 92-err-required.out    issue add   --title "No Project"
+# ── errors ───────────────────────────────────────────────────────────
+# validation: enum field rejects unknown value
+# notfound:   show on an unknown slug
+# required:   sub-file add without a required flag
+capture 90-err-validation.out  project update launch-site --stage nope
+capture 91-err-notfound.out    project show  ghost
+capture 92-err-required.out    project meeting add launch-site --date 2026-04-15
 
 # ── check mode: diff $OUT against the committed ./out/ ───────────────
 if [[ "$MODE" == "check" ]]; then

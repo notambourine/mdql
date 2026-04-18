@@ -1,0 +1,18 @@
+create project
+
+Usage:
+  mdql project add [flags]
+
+Flags:
+      --body string    markdown body
+  -h, --help           help for add
+      --lead string    person slug
+      --name string    required
+      --stage string   draft|active|done
+      --tags strings
+
+Global Flags:
+  -f, --format string   output: table|json|csv|tsv
+  -q, --quiet           IDs only
+      --root string     store root (default ".")
+      --schema string   schema file path (default "./schema.yml")

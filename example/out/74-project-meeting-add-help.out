@@ -1,0 +1,16 @@
+create project/meeting
+
+Usage:
+  mdql project meeting add <parent-slug> [flags]
+
+Flags:
+      --body string      markdown body
+      --date string      required
+  -h, --help             help for add
+      --subject string   required
+
+Global Flags:
+  -f, --format string   output: table|json|csv|tsv
+  -q, --quiet           IDs only
+      --root string     store root (default ".")
+      --schema string   schema file path (default "./schema.yml")

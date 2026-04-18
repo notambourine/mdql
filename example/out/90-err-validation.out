@@ -1,1 +1,1 @@
-mdql: field "priority"="nope" not in [low medium high]: validation error
+mdql: field "stage"="nope" not in [draft active done]: validation error

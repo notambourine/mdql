@@ -8,7 +8,6 @@ Available Commands:
   help        Help about any command
   index       manage search index
   init        scaffold store directories from schema
-  issue       manage issue
   person      manage person
   project     manage project
   schema      schema introspection
