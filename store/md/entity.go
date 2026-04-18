@@ -2,7 +2,9 @@ package md
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -48,7 +50,11 @@ func (s *Store) ForEachEntity(kind string, visit EntityVisitor) error {
 		}
 		front, body, err := Parse(path)
 		if err != nil {
-			if os.IsNotExist(err) {
+			// Sprawl folders without an index.md are skipped rather than
+			// surfaced — lint owns reporting those as orphan_folder /
+			// orphan_subfiles. errors.Is walks the %w chain, which
+			// os.IsNotExist does not.
+			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
 			return fmt.Errorf("parse %s: %w", path, err)

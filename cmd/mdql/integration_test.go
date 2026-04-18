@@ -738,6 +738,95 @@ func TestSubFileCommandsInEntityHelp(t *testing.T) {
 	}
 }
 
+// TestLintCleanStoreExitZero asserts that a well-formed store returns
+// exit 0 with a zero-count summary. Pins the baseline so future checks
+// don't accidentally false-positive on a clean fixture.
+func TestLintCleanStoreExitZero(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "person", "add",
+		"--name", "Jane Smith",
+		"--email", "jane@example.com")
+	r := mustRun(t, root, "--quiet", "lint")
+	want := "errors=0 warns=0 info=0"
+	if !strings.Contains(r.stdout, want) {
+		t.Errorf("lint summary = %q, want contains %q", r.stdout, want)
+	}
+}
+
+// TestLintCatchallAbsorbedInfo pins the INFO classification for a loose
+// .md file sitting under a sprawl entity folder. The catchall kind
+// attribution is the primary way agents discover drift-via-loose-files,
+// so its classification is load-bearing.
+func TestLintCatchallAbsorbedInfo(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site", "--stage", "active")
+	loose := filepath.Join(root, "projects", "launch-site", "loose.md")
+	body := "---\ntitle: Loose\n---\n\nhand-dropped file"
+	if err := os.WriteFile(loose, []byte(body), 0o644); err != nil {
+		t.Fatalf("write loose: %v", err)
+	}
+	r := mustRun(t, root, "--format", "json", "lint")
+	var rep struct {
+		Findings []map[string]any `json:"findings"`
+		Summary  map[string]int   `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &rep); err != nil {
+		t.Fatalf("parse lint json: %v\n%s", err, r.stdout)
+	}
+	if rep.Summary["info"] != 1 || rep.Summary["warn"] != 0 || rep.Summary["error"] != 0 {
+		t.Fatalf("summary = %v, want info=1 warn=0 error=0", rep.Summary)
+	}
+	if rep.Findings[0]["code"] != "catchall_absorbed" {
+		t.Errorf("code = %v, want catchall_absorbed", rep.Findings[0]["code"])
+	}
+}
+
+// TestLintOrphanSubFilesExitTwo drives the worst-severity path: a folder
+// without index.md holding sub-file data. ERROR must exit 2 so CI gates
+// can reject this specific class of drift even when warnings would have
+// shipped.
+func TestLintOrphanSubFilesExitTwo(t *testing.T) {
+	root := initStore(t)
+	orphan := filepath.Join(root, "projects", "no-index", "meetings")
+	if err := os.MkdirAll(orphan, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := "---\nsubject: Whoops\ndate: 2026-05-01\n---\n"
+	if err := os.WriteFile(filepath.Join(orphan, "2026-05-01-whoops.md"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write sub-file: %v", err)
+	}
+	r := run(t, root, "--quiet", "lint")
+	if r.exitCode != 2 {
+		t.Fatalf("exit = %d, want 2\nstdout: %s\nstderr: %s", r.exitCode, r.stdout, r.stderr)
+	}
+	if !strings.Contains(r.stdout, "errors=1") {
+		t.Errorf("summary missing errors=1: %q", r.stdout)
+	}
+}
+
+// TestLintWarningExitOne covers the middle exit code. A missing required
+// field is the most likely real-world WARN (hand-edited frontmatter),
+// so we pin it rather than dangling_link.
+func TestLintWarningExitOne(t *testing.T) {
+	root := initStore(t)
+	folder := filepath.Join(root, "people", "jane")
+	if err := os.MkdirAll(folder, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// name is required, but the record below omits it.
+	body := "---\nemail: jane@example.com\n---\n"
+	if err := os.WriteFile(filepath.Join(folder, "index.md"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	r := run(t, root, "--quiet", "lint")
+	if r.exitCode != 1 {
+		t.Fatalf("exit = %d, want 1\nstdout: %s\nstderr: %s", r.exitCode, r.stdout, r.stderr)
+	}
+	if !strings.Contains(r.stdout, "errors=0") {
+		t.Errorf("expected errors=0 in summary: %q", r.stdout)
+	}
+}
+
 // assertGoldenEqual compares two record lists field-by-field for the
 // keys present in want. Extra keys in got (e.g. optional fields) are
 // ignored so the golden doesn't have to enumerate every schema field.

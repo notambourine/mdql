@@ -1,0 +1,1 @@
+{"findings":[{"severity":"info","code":"catchall_absorbed","kind":"project","slug":"launch-site","sub_kind":"note","sub_slug":"open-questions","path":"projects/launch-site/open-questions.md","message":"loose .md attributed to catchall kind \"note\""}],"summary":{"info":1,"warn":0,"error":0}}

@@ -8,6 +8,7 @@ Available Commands:
   help        Help about any command
   index       manage search index
   init        scaffold store directories from schema
+  lint        audit store for schema/disk drift
   person      manage person
   project     manage project
   schema      schema introspection

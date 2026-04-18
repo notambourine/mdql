@@ -129,6 +129,12 @@ capture 43-wiki-backlinks-launch-site.out --format json wiki backlinks launch-si
 # ── tag ──────────────────────────────────────────────────────────────
 capture 50-tag-list.out                   --format json tag list
 
+# ── lint ─────────────────────────────────────────────────────────────
+# 55 = agent-facing JSON; 56 = one-line summary for CI. Example store
+# has one catchall-absorbed loose note → INFO only → exit 0.
+capture 55-lint.out                       --format json lint
+capture 56-lint-quiet.out                 --quiet       lint
+
 # ── archive ──────────────────────────────────────────────────────────
 capture 60-person-archive.out             person archive bob-quinn
 capture 61-person-list-after-archive.out  --format json person list

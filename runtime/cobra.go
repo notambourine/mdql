@@ -80,6 +80,7 @@ func BuildRootCmd(s *schema.Schema) *cobra.Command {
 	registerSearch(root, opener, g)
 	registerWiki(root, opener, g)
 	registerTag(root, opener, g)
+	registerLint(root, opener, g)
 	registerSchemaDescribe(root, s)
 	for name, entity := range s.Entities {
 		registerEntity(root, name, entity, opener, g)
