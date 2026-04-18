@@ -6,3 +6,4 @@ bin/
 *.out
 coverage.txt
 .DS_Store
+gm.local.md
