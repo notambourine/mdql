@@ -10,6 +10,28 @@ end-to-end — it's the full feature map. When you're done, either propose
 a schema for this directory (see "Bootstrapping" at the bottom) or copy
 one of the bundled examples.
 
+## Consumer context first
+
+Schema defines what fields exist. It does not define the conventions
+for using them: which enum value fits a given scenario, who goes in
+which field, what the body prose means versus the frontmatter array.
+That layer is the user's, and mdql cannot enforce it.
+
+Before editing any entity, read two files:
+
+1. `<store>/CLAUDE.md` (if present) — the store's own conventions,
+   written by the user. Enum glosses ("slack vs dm: slack is a relayed
+   message, dm is a direct 1:1"), role/field splits ("people[] is bare
+   names; roles live in the body ## Team table"), and lifecycle rules
+   ("stage flips only on handoff delivered") live here, not in schema.
+2. The target entity's `index.md` body — for sprawl entities, the body
+   often carries prose context (## Team tables, ## Lessons learned,
+   ## Notes) that the frontmatter can't express. Read it before
+   writing, and preserve it on update.
+
+If either is missing or ambiguous, ask the user rather than guessing.
+The schema will accept a write that violates the user's conventions.
+
 ## Bundled examples
 
 Three runnable schemas ship in the mdql source tree under `examples/`:
@@ -129,6 +151,33 @@ mdql task list --format json | jq '.[] | select(.status == "doing")'
 # one ID per line for xargs
 mdql project list --quiet | xargs -I% mdql project show %
 ```
+
+## jq recipes
+
+The patterns every agent session re-derives. Pin these.
+
+```sh
+# reverse lookup: which entities have X in an array field
+mdql <kind> list --format json \
+  | jq -r '.[] | select(.<array-field>[]? == "X") | .slug'
+
+# projection: specific fields (fast eyeballing)
+mdql <kind> list --format tsv --fields slug,<f1>,<f2>
+
+# schema inspection: frontmatter_fields is a map, iterate with to_entries
+mdql schema describe --format json \
+  | jq '.entities.<kind>.frontmatter_fields | to_entries[] | {name: .key, type: .value.type}'
+
+# flat deduped list of every value of an array field across all entities
+mdql <kind> list --format json | jq -r '.[].<array-field>[]?' | sort -u
+
+# filter by enum value
+mdql <kind> list --format json | jq '.[] | select(.<enum-field> == "<value>")'
+```
+
+**TSV caveat:** TSV flattens `string[]` with space separators, so
+`people: ["Tom A.", "Lulu"]` becomes `Tom A. Lulu` — ambiguous for
+multi-word values. Use `--format json` when value boundaries matter.
 
 ## `--dry-run` plans
 

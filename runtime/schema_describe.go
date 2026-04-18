@@ -162,7 +162,21 @@ func registerSchemaDescribe(root *cobra.Command, s *schema.Schema) {
 	parent.AddCommand(&cobra.Command{
 		Use:   "describe",
 		Short: "structured view of entities, fields, and commands",
-		Args:  cobra.NoArgs,
+		Long: "Full entity + field + sub-file + command graph. Always JSON.\n" +
+			"\n" +
+			"Shape: .entities.<kind>.frontmatter_fields is a MAP keyed by field\n" +
+			"name, not an array. Iterate with `| to_entries[]`; the common mistake\n" +
+			"`| .[] | select(.name==…)` returns nothing because there is no .name key.\n" +
+			"\n" +
+			"Common recipes:\n" +
+			"  # field types for a kind\n" +
+			"  mdql schema describe --format json \\\n" +
+			"    | jq '.entities.<kind>.frontmatter_fields | to_entries[] | {(.key): .value.type}'\n" +
+			"\n" +
+			"  # required fields for a kind\n" +
+			"  mdql schema describe --format json \\\n" +
+			"    | jq '.entities.<kind>.frontmatter_fields | to_entries[] | select(.value.required) | .key'",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			desc := describeSchema(s)
 			enc := json.NewEncoder(os.Stdout)

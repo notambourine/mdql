@@ -157,7 +157,15 @@ func entityListCmd(kind string, entity schema.Entity, cols []format.ColumnDef, o
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "list " + kind,
-		Args:  cobra.NoArgs,
+		Long: "List " + kind + " records. TTY renders table; piped renders JSON.\n" +
+			"\n" +
+			"  --fields slug,<f1>,<f2>    project to named fields\n" +
+			"  --format json              force JSON (unambiguous array values)\n" +
+			"  --format tsv               string[] fields flatten with space separators\n" +
+			"\n" +
+			"TSV caveat: multi-word array values lose their boundaries (\"Tom A.\"\n" +
+			"and \"Lulu\" run together). Use --format json when value boundaries matter.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectCols, err := resolveFieldsProjection(entity.Fields, cols, fields)
 			if err != nil {
@@ -252,7 +260,13 @@ func entityUpdateCmd(kind string, entity schema.Entity, cols []format.ColumnDef,
 	cmd := &cobra.Command{
 		Use:   "update <slug>",
 		Short: "update " + kind,
-		Args:  cobra.ExactArgs(1),
+		Long: "Update " + kind + " fields. Output is the full updated record as JSON.\n" +
+			"\n" +
+			"  --dry-run    preview as WritePlan (diff with before + after state)\n" +
+			"\n" +
+			"--fields is a list/show flag; update always returns the whole record.\n" +
+			"For read-only inspection after update, run `mdql " + kind + " show <slug>`.",
+		Args: cobra.ExactArgs(1),
 	}
 	fb := registerFieldFlags(cmd, entity, false)
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview without writing")
