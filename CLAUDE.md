@@ -25,7 +25,5 @@ Schema-driven typed CRUD + full-text search + wiki graph over markdown files wit
 ## Environment
 
 - mdql: `/Users/tomfuertes/sandbox/git-repos/mdql` on `main`.
-- crm-cli source material: `/Users/tomfuertes/sandbox/git-repos/crm-cli` on `markdown-db`.
-- Go 1.25.
 
 Work items (remaining extraction steps, verification gates, source-material file references) live in TaskList — not here.

@@ -7,3 +7,4 @@ bin/
 coverage.txt
 .DS_Store
 gm.local.md
+.env*
