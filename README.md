@@ -32,9 +32,22 @@ mdql book list --format json | jq '.[] | select(.rating == "done")'
 
 Local-first, git-friendly, AI-friendly. Your data is plain markdown you can read without mdql installed. The schema drives everything — adding a new entity type means editing `schema.yml`, not writing code.
 
+## Install
+
+```sh
+brew tap notambourine/tap
+brew install mdql
+```
+
+Or from Go source:
+
+```sh
+go install github.com/notambourine/mdql/cmd/mdql@latest
+```
+
 ## Status
 
-Pre-release. API and schema grammar subject to change until v0.1.0.
+Early release. v0.1.x — schema grammar and CLI surface may shift; pin a tag if you need stability.
 
 ## Credit
 

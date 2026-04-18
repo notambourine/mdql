@@ -15,12 +15,20 @@ import (
 	"github.com/notambourine/mdql/schema"
 )
 
+// BuildInfo carries ldflags-injected version metadata.
+// Zero value is valid — callers (e.g. library embedders) can omit it.
+type BuildInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
 // Run builds the cobra tree from schema, dispatches args[1:], and
 // translates errors into Unix exit codes via model.ExitCode.
 //
 // args follows os.Args convention: args[0] is the program name,
 // consumed only for help text.
-func Run(args []string, s *schema.Schema) int {
+func Run(args []string, s *schema.Schema, info BuildInfo) int {
 	if len(args) == 0 {
 		args = []string{"mdql"}
 	}
@@ -28,6 +36,9 @@ func Run(args []string, s *schema.Schema) int {
 	defer cancel()
 
 	root := runtime.BuildRootCmd(s)
+	if info.Version != "" {
+		root.Version = fmt.Sprintf("%s (%s, %s)", info.Version, info.Commit, info.Date)
+	}
 	root.SetArgs(args[1:])
 	if err := root.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "mdql:", err)

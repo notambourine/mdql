@@ -11,7 +11,21 @@ import (
 	"github.com/notambourine/mdql/schema"
 )
 
+// Build info — set by goreleaser via -ldflags="-X main.version=... -X main.commit=... -X main.date=...".
+// Defaults make `go install`-built binaries self-identify as dev rather than pretending to be a release.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
+	// --version short-circuits schema load so `mdql --version` works
+	// in any cwd, including fresh checkouts with no schema.yml.
+	if hasFlag(os.Args, "--version") || hasFlag(os.Args, "-v") {
+		fmt.Printf("mdql %s (%s, %s)\n", version, commit, date)
+		os.Exit(0)
+	}
 	path := resolveSchemaPath(os.Args)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -33,12 +47,21 @@ func main() {
 		fmt.Fprintln(os.Stderr, "mdql:", err)
 		os.Exit(1)
 	}
-	os.Exit(engine.Run(os.Args, s))
+	os.Exit(engine.Run(os.Args, s, engine.BuildInfo{Version: version, Commit: commit, Date: date}))
 }
 
 func explicitSchemaFlag(args []string) bool {
 	for _, a := range args {
 		if a == "--schema" || (len(a) >= len("--schema=") && a[:len("--schema=")] == "--schema=") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
 			return true
 		}
 	}
