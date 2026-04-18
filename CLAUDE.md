@@ -19,6 +19,8 @@ Schema-driven typed CRUD + full-text search + wiki graph over markdown files wit
 6. **Filename is canonical id.** mdql does not auto-inject `id`, `uuid`, `created_at`, or `updated_at` into frontmatter. The slug is derived from the filename on read (injected into the in-memory record as `id`). User-declared timestamp fields are honored as normal data; mdql doesn't manage them. Slug collisions get suffixed at the filename level (`jane-smith`, `jane-smith-2`).
 7. **`mdql schema describe --format json` is the agent session-entry payload.** Single command emits the full entity/field/command graph an LLM needs to derive valid commands. Stable JSON shape — integration test pins it. Always JSON; `--format` is ignored.
 8. **`wiki dangling` and `wiki orphans` return `[]` not `null` on empty result** — `jq 'length'` works without nil-handling.
+9. **Wiki link grammar is three forms.** `[[slug]]` (entity), `[[kind/slug]]` (kind-qualified entity), `[[parent-slug/sub-dir/sub-slug]]` (sub-file path — uses SubFile.Dir, not the sub-kind name). In-frontmatter link `target:` uses `.` for sub-file kinds (`project.decision`); in-body refs use `/` with sub-file Dirs. `ExpandLinkKeys` fans multi-segment refs so `backlinks <parent>` surfaces everything pointing into the parent, full-form and sub-file-grain alike.
+10. **Sub-files index as first-class bleve docs.** Doc.Type = sub-kind (so `search --type meeting` hits sub-files directly); ParentKind/ParentSlug/SubKind carry the rest. Sub-file LinksTo always includes the parent slug, keeping parents reachable even when a sub-file only links to siblings. Entity archive cascades: removing a parent deindexes its sub-files.
 
 ## Environment
 
