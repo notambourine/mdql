@@ -684,6 +684,47 @@ func TestSubFileMissingRequiredFails(t *testing.T) {
 	}
 }
 
+// TestSchemaDescribePopulatesSubFiles pins that `schema describe` on a
+// schema declaring `files:` emits a populated `sub_files` map with the
+// per-sub-file field schema and the generated command list. This is
+// the commit-3 contract: agents use this payload to learn the full
+// sub-file command surface without reading schema.yml directly.
+func TestSchemaDescribePopulatesSubFiles(t *testing.T) {
+	root := initSubFileStore(t)
+	r := mustRun(t, root, "schema", "describe")
+
+	var desc map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &desc); err != nil {
+		t.Fatalf("parse describe: %v\nstdout: %s", err, r.stdout)
+	}
+	project := desc["entities"].(map[string]any)["project"].(map[string]any)
+	subs, ok := project["sub_files"].(map[string]any)
+	if !ok {
+		t.Fatalf("project.sub_files missing: %v", project)
+	}
+	for _, want := range []string{"meeting", "decision", "note"} {
+		if _, ok := subs[want]; !ok {
+			t.Errorf("sub_files missing kind %q: %v", want, subs)
+		}
+	}
+	meeting := subs["meeting"].(map[string]any)
+	if meeting["dir"] != "meetings" {
+		t.Errorf("meeting.dir = %v, want meetings", meeting["dir"])
+	}
+	fields := meeting["frontmatter_fields"].(map[string]any)
+	if fields["subject"] == nil {
+		t.Errorf("meeting.frontmatter_fields.subject missing: %v", fields)
+	}
+	cmds := meeting["commands"].([]any)
+	if len(cmds) == 0 {
+		t.Errorf("meeting.commands empty")
+	}
+	note := subs["note"].(map[string]any)
+	if note["catchall"] != true {
+		t.Errorf("note.catchall = %v, want true", note["catchall"])
+	}
+}
+
 // TestSubFileCommandsInEntityHelp pins that declaring `files:` on an
 // entity exposes the sub-file kinds as subcommands under that entity —
 // so `mdql project --help` lists `meeting`, `decision`, `note`.

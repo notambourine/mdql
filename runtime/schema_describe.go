@@ -21,17 +21,29 @@ type schemaDescription struct {
 }
 
 type entityDescription struct {
-	Dir               string               `json:"dir"`
-	Title             string               `json:"title"`
-	Slug              string               `json:"slug"`
-	Archivable        bool                 `json:"archivable"`
-	AppendOnly        bool                 `json:"append_only"`
+	Dir        string `json:"dir"`
+	Title      string `json:"title"`
+	Slug       string `json:"slug"`
+	Archivable bool   `json:"archivable"`
+	AppendOnly bool   `json:"append_only"`
 	// Sprawl reports the on-disk layout: true = `{dir}/{slug}/index.md`
 	// with free-form sibling files, false = single `{dir}/{slug}.md`.
 	// Sprawl is the default; a schema entity opts out with `flat: true`.
-	Sprawl            bool                 `json:"sprawl"`
+	Sprawl            bool                      `json:"sprawl"`
+	FrontmatterFields map[string]fieldView      `json:"frontmatter_fields"`
+	SubFiles          map[string]subFileView    `json:"sub_files"`
+	Commands          []string                  `json:"commands"`
+}
+
+// subFileView is the agent-loadable description of one sub-file kind.
+// Mirrors entityDescription's field-level shape so LLMs can reason
+// about sub-files with the same mental model they use for entities.
+type subFileView struct {
+	Dir               string               `json:"dir"`
+	Slug              string               `json:"slug,omitempty"`
+	Title             string               `json:"title,omitempty"`
+	Catchall          bool                 `json:"catchall,omitempty"`
 	FrontmatterFields map[string]fieldView `json:"frontmatter_fields"`
-	SubFiles          map[string]fieldView `json:"sub_files"`
 	Commands          []string             `json:"commands"`
 }
 
@@ -77,9 +89,38 @@ func describeSchema(s *schema.Schema) schemaDescription {
 			AppendOnly:        entity.AppendOnly,
 			Sprawl:            entity.IsSprawl(),
 			FrontmatterFields: convertFields(entity.Fields),
-			SubFiles:          map[string]fieldView{}, // populated in commit 3 once files: parses
+			SubFiles:          convertSubFiles(name, entity.Files),
 			Commands:          entityCommands(entity),
 		}
+	}
+	return out
+}
+
+// convertSubFiles produces the agent-loadable sub-file views. Empty
+// when the entity has no files: block, so the JSON shape stays stable
+// (callers can iterate `sub_files` without nil-checks).
+func convertSubFiles(entityName string, in map[string]schema.SubFile) map[string]subFileView {
+	out := make(map[string]subFileView, len(in))
+	for name, sub := range in {
+		out[name] = subFileView{
+			Dir:               sub.Dir,
+			Slug:              sub.Slug,
+			Title:             sub.Title,
+			Catchall:          sub.Catchall,
+			FrontmatterFields: convertFields(sub.Fields),
+			Commands:          subFileCommandList(entityName, name),
+		}
+	}
+	return out
+}
+
+// subFileCommandList is the verb surface the CLI registers for a
+// sub-file kind. Kept alphabetical (matches entityCommands).
+func subFileCommandList(entityName, subName string) []string {
+	verbs := []string{"add", "delete", "list", "show", "update"}
+	out := make([]string, 0, len(verbs))
+	for _, v := range verbs {
+		out = append(out, entityName+" "+subName+" "+v)
 	}
 	return out
 }
