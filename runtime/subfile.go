@@ -35,10 +35,10 @@ func registerSubFiles(parent *cobra.Command, kind string, entity schema.Entity, 
 		cols := subFileColumns(sub)
 
 		sfCmd.AddCommand(subFileAddCmd(kind, subName, sub, cols, opener, g))
-		sfCmd.AddCommand(subFileListCmd(kind, subName, cols, opener, g))
+		sfCmd.AddCommand(subFileListCmd(kind, subName, sub, cols, opener, g))
 		sfCmd.AddCommand(subFileShowCmd(kind, subName, cols, opener, g))
 		sfCmd.AddCommand(subFileUpdateCmd(kind, subName, sub, cols, opener, g))
-		sfCmd.AddCommand(subFileDeleteCmd(kind, subName, opener))
+		sfCmd.AddCommand(subFileDeleteCmd(kind, subName, opener, g))
 		parent.AddCommand(sfCmd)
 	}
 }
@@ -68,19 +68,29 @@ func subFileColumns(sub schema.SubFile) []format.ColumnDef {
 }
 
 func subFileAddCmd(parentKind, subKind string, sub schema.SubFile, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "add <parent-slug>",
 		Short: "create " + parentKind + "/" + subKind,
 		Args:  cobra.ExactArgs(1),
 	}
 	fb := registerSubFieldFlags(cmd, sub, true)
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview without writing")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		store, _, closer, err := opener(cmd.Context())
 		if err != nil {
 			return err
 		}
 		defer closer()
-		rec, err := store.CreateSubFile(cmd.Context(), parentKind, args[0], subKind, fb.collectAll(cmd))
+		input := fb.collectAll(cmd)
+		if dryRun {
+			plan, err := store.PlanCreateSubFile(cmd.Context(), parentKind, args[0], subKind, input)
+			if err != nil {
+				return err
+			}
+			return renderPlan(g, plan)
+		}
+		rec, err := store.CreateSubFile(cmd.Context(), parentKind, args[0], subKind, input)
 		if err != nil {
 			return err
 		}
@@ -89,12 +99,17 @@ func subFileAddCmd(parentKind, subKind string, sub schema.SubFile, cols []format
 	return cmd
 }
 
-func subFileListCmd(parentKind, subKind string, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
-	return &cobra.Command{
+func subFileListCmd(parentKind, subKind string, sub schema.SubFile, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
+	var fields []string
+	cmd := &cobra.Command{
 		Use:   "list <parent-slug>",
 		Short: "list " + parentKind + "/" + subKind,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			projectCols, err := resolveFieldsProjection(sub.Fields, cols, fields)
+			if err != nil {
+				return err
+			}
 			store, _, closer, err := opener(cmd.Context())
 			if err != nil {
 				return err
@@ -108,9 +123,14 @@ func subFileListCmd(parentKind, subKind string, cols []format.ColumnDef, opener 
 			for _, r := range recs {
 				rows = append(rows, subFileRow(r))
 			}
-			return renderRecords(g, cols, rows)
+			if len(fields) > 0 {
+				rows = projectRecords(rows, fields)
+			}
+			return renderRecords(g, projectCols, rows)
 		},
 	}
+	cmd.Flags().StringSliceVar(&fields, "fields", nil, "project to named fields")
+	return cmd
 }
 
 func subFileShowCmd(parentKind, subKind string, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
@@ -134,19 +154,29 @@ func subFileShowCmd(parentKind, subKind string, cols []format.ColumnDef, opener 
 }
 
 func subFileUpdateCmd(parentKind, subKind string, sub schema.SubFile, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "update <parent-slug> <sub-slug>",
 		Short: "update " + parentKind + "/" + subKind,
 		Args:  cobra.ExactArgs(2),
 	}
 	fb := registerSubFieldFlags(cmd, sub, false)
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview without writing")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		store, _, closer, err := opener(cmd.Context())
 		if err != nil {
 			return err
 		}
 		defer closer()
-		rec, err := store.UpdateSubFile(cmd.Context(), parentKind, args[0], subKind, args[1], fb.collect(cmd))
+		patch := fb.collect(cmd)
+		if dryRun {
+			plan, err := store.PlanUpdateSubFile(cmd.Context(), parentKind, args[0], subKind, args[1], patch)
+			if err != nil {
+				return err
+			}
+			return renderPlan(g, plan)
+		}
+		rec, err := store.UpdateSubFile(cmd.Context(), parentKind, args[0], subKind, args[1], patch)
 		if err != nil {
 			return err
 		}
@@ -155,8 +185,9 @@ func subFileUpdateCmd(parentKind, subKind string, sub schema.SubFile, cols []for
 	return cmd
 }
 
-func subFileDeleteCmd(parentKind, subKind string, opener storeOpener) *cobra.Command {
-	return &cobra.Command{
+func subFileDeleteCmd(parentKind, subKind string, opener storeOpener, g *globals) *cobra.Command {
+	var dryRun bool
+	cmd := &cobra.Command{
 		Use:   "delete <parent-slug> <sub-slug>",
 		Short: "delete " + parentKind + "/" + subKind,
 		Args:  cobra.ExactArgs(2),
@@ -166,6 +197,13 @@ func subFileDeleteCmd(parentKind, subKind string, opener storeOpener) *cobra.Com
 				return err
 			}
 			defer closer()
+			if dryRun {
+				plan, err := store.PlanDeleteSubFile(cmd.Context(), parentKind, args[0], subKind, args[1])
+				if err != nil {
+					return err
+				}
+				return renderPlan(g, plan)
+			}
 			if err := store.DeleteSubFile(cmd.Context(), parentKind, args[0], subKind, args[1]); err != nil {
 				return err
 			}
@@ -173,6 +211,8 @@ func subFileDeleteCmd(parentKind, subKind string, opener storeOpener) *cobra.Com
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview without writing")
+	return cmd
 }
 
 // subFileRow flattens a SubFileRecord into the map[string]any that the

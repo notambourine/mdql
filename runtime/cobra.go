@@ -95,32 +95,42 @@ func registerEntity(root *cobra.Command, kind string, entity schema.Entity, open
 	cols := defaultColumns(entity)
 
 	parent.AddCommand(entityAddCmd(kind, entity, cols, opener, g))
-	parent.AddCommand(entityListCmd(kind, cols, opener, g))
+	parent.AddCommand(entityListCmd(kind, entity, cols, opener, g))
 	parent.AddCommand(entityShowCmd(kind, entity, cols, opener, g))
 	if !entity.AppendOnly {
 		parent.AddCommand(entityUpdateCmd(kind, entity, cols, opener, g))
 	}
 	if entity.IsArchivable() {
-		parent.AddCommand(entityArchiveCmd(kind, opener))
+		parent.AddCommand(entityArchiveCmd(kind, opener, g))
 	}
 	registerSubFiles(parent, kind, entity, opener, g)
 	root.AddCommand(parent)
 }
 
 func entityAddCmd(kind string, entity schema.Entity, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "create " + kind,
 		Args:  cobra.NoArgs,
 	}
 	fb := registerFieldFlags(cmd, entity, true)
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview without writing")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		store, _, closer, err := opener(cmd.Context())
 		if err != nil {
 			return err
 		}
 		defer closer()
-		rec, err := store.Create(cmd.Context(), kind, fb.collectAll(cmd))
+		input := fb.collectAll(cmd)
+		if dryRun {
+			plan, err := store.PlanCreate(cmd.Context(), kind, input)
+			if err != nil {
+				return err
+			}
+			return renderPlan(g, plan)
+		}
+		rec, err := store.Create(cmd.Context(), kind, input)
 		if err != nil {
 			return err
 		}
@@ -129,14 +139,19 @@ func entityAddCmd(kind string, entity schema.Entity, cols []format.ColumnDef, op
 	return cmd
 }
 
-func entityListCmd(kind string, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
+func entityListCmd(kind string, entity schema.Entity, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
 	var tag string
 	var limit int
+	var fields []string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "list " + kind,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			projectCols, err := resolveFieldsProjection(entity.Fields, cols, fields)
+			if err != nil {
+				return err
+			}
 			store, _, closer, err := opener(cmd.Context())
 			if err != nil {
 				return err
@@ -153,11 +168,15 @@ func entityListCmd(kind string, cols []format.ColumnDef, opener storeOpener, g *
 			if limit > 0 && len(recs) > limit {
 				recs = recs[:limit]
 			}
-			return renderRecords(g, cols, recs)
+			if len(fields) > 0 {
+				recs = projectRecords(recs, fields)
+			}
+			return renderRecords(g, projectCols, recs)
 		},
 	}
 	cmd.Flags().StringVar(&tag, "tag", "", "filter by tag")
 	cmd.Flags().IntVar(&limit, "limit", 0, "max results")
+	cmd.Flags().StringSliceVar(&fields, "fields", nil, "project to named fields")
 	return cmd
 }
 
@@ -218,19 +237,29 @@ func subFileGraphView(root string, recs []md.SubFileRecord) []subFileGraphItem {
 }
 
 func entityUpdateCmd(kind string, entity schema.Entity, cols []format.ColumnDef, opener storeOpener, g *globals) *cobra.Command {
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "update <slug>",
 		Short: "update " + kind,
 		Args:  cobra.ExactArgs(1),
 	}
 	fb := registerFieldFlags(cmd, entity, false)
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview without writing")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		store, _, closer, err := opener(cmd.Context())
 		if err != nil {
 			return err
 		}
 		defer closer()
-		rec, err := store.Update(cmd.Context(), kind, args[0], fb.collect(cmd))
+		patch := fb.collect(cmd)
+		if dryRun {
+			plan, err := store.PlanUpdate(cmd.Context(), kind, args[0], patch)
+			if err != nil {
+				return err
+			}
+			return renderPlan(g, plan)
+		}
+		rec, err := store.Update(cmd.Context(), kind, args[0], patch)
 		if err != nil {
 			return err
 		}
@@ -239,8 +268,9 @@ func entityUpdateCmd(kind string, entity schema.Entity, cols []format.ColumnDef,
 	return cmd
 }
 
-func entityArchiveCmd(kind string, opener storeOpener) *cobra.Command {
-	return &cobra.Command{
+func entityArchiveCmd(kind string, opener storeOpener, g *globals) *cobra.Command {
+	var dryRun bool
+	cmd := &cobra.Command{
 		Use:   "archive <slug>",
 		Short: "archive " + kind,
 		Args:  cobra.ExactArgs(1),
@@ -250,6 +280,13 @@ func entityArchiveCmd(kind string, opener storeOpener) *cobra.Command {
 				return err
 			}
 			defer closer()
+			if dryRun {
+				plan, err := store.PlanArchiveEntity(cmd.Context(), kind, args[0])
+				if err != nil {
+					return err
+				}
+				return renderPlan(g, plan)
+			}
 			if err := store.ArchiveEntity(cmd.Context(), kind, args[0]); err != nil {
 				return err
 			}
@@ -257,6 +294,8 @@ func entityArchiveCmd(kind string, opener storeOpener) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview without writing")
+	return cmd
 }
 
 // ─── cross-entity ───────────────────────────────────────────────────
@@ -537,4 +576,63 @@ func writeQuietAny(w io.Writer, v any) error {
 		}
 	}
 	return nil
+}
+
+// renderPlan emits a WritePlan in the user-selected format. JSON is the
+// agent-facing path (full plan shape); table/quiet fall back to a
+// single terse line so human-driven runs don't drown in detail.
+func renderPlan(g *globals, plan md.WritePlan) error {
+	if g.quiet {
+		fmt.Fprintln(os.Stdout, plan.Path)
+		return nil
+	}
+	if format.Resolve(g.format) == format.FormatJSON {
+		return format.OutputJSONAny(os.Stdout, plan)
+	}
+	if plan.ToPath != "" {
+		fmt.Fprintf(os.Stdout, "action=%s kind=%s slug=%s path=%s to_path=%s\n", plan.Action, plan.Kind, plan.Slug, plan.Path, plan.ToPath)
+	} else {
+		fmt.Fprintf(os.Stdout, "action=%s kind=%s slug=%s path=%s\n", plan.Action, plan.Kind, plan.Slug, plan.Path)
+	}
+	return nil
+}
+
+// resolveFieldsProjection validates a --fields request against the
+// entity/sub-file schema and returns the column layout the renderer
+// should use. Falls through to the default cols when fields is empty.
+//
+// Validation runs before the store opens (bleve init is expensive) so
+// an invalid --fields bails fast without touching the index.
+func resolveFieldsProjection(fieldDefs map[string]schema.Field, defaultCols []format.ColumnDef, fields []string) ([]format.ColumnDef, error) {
+	if len(fields) == 0 {
+		return defaultCols, nil
+	}
+	for _, f := range fields {
+		if f == "id" || f == "body" {
+			continue
+		}
+		if _, ok := fieldDefs[f]; !ok {
+			return nil, fmt.Errorf("unknown field: %s", f)
+		}
+	}
+	cols := make([]format.ColumnDef, 0, len(fields))
+	for _, f := range fields {
+		cols = append(cols, format.ColumnDef{Header: humanize(f), Field: f})
+	}
+	return cols, nil
+}
+
+// projectRecords rebuilds each row with only the requested keys so JSON
+// output matches the column-subset promise. Missing keys serialize as
+// null, which is more explicit than silently dropping the column.
+func projectRecords(recs []map[string]any, fields []string) []map[string]any {
+	out := make([]map[string]any, 0, len(recs))
+	for _, r := range recs {
+		row := make(map[string]any, len(fields))
+		for _, f := range fields {
+			row[f] = r[f]
+		}
+		out = append(out, row)
+	}
+	return out
 }

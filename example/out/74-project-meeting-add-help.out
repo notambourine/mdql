@@ -6,6 +6,7 @@ Usage:
 Flags:
       --body string      markdown body
       --date string      required
+      --dry-run          preview without writing
   -h, --help             help for add
       --subject string   required
 

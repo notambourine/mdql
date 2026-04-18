@@ -200,55 +200,89 @@ func emitSubFile(parentKind, parentSlug, subKind, slug, path string, visit SubFi
 // and returns the stored record. Requires the parent folder to exist
 // (parent must be created first).
 func (s *Store) CreateSubFile(ctx context.Context, parentKind, parentSlug, subKind string, input map[string]any) (SubFileRecord, error) {
-	if err := ctxErr(ctx); err != nil {
+	p, err := s.prepareSubFileCreate(ctx, parentKind, parentSlug, subKind, input)
+	if err != nil {
 		return SubFileRecord{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(p.rec.Path), 0o755); err != nil {
+		return SubFileRecord{}, fmt.Errorf("mkdir %s: %w", filepath.Dir(p.rec.Path), err)
+	}
+	if err := writeEntity(p.rec.Path, frontmatterOnly(p.rec.Fields), p.rec.Body); err != nil {
+		return SubFileRecord{}, err
+	}
+	if err := s.indexSubFile(parentKind, parentSlug, p.sub, p.rec); err != nil {
+		return SubFileRecord{}, err
+	}
+	return p.rec, nil
+}
+
+// PlanCreateSubFile describes what CreateSubFile would write without
+// touching disk or the indexer.
+func (s *Store) PlanCreateSubFile(ctx context.Context, parentKind, parentSlug, subKind string, input map[string]any) (WritePlan, error) {
+	p, err := s.prepareSubFileCreate(ctx, parentKind, parentSlug, subKind, input)
+	if err != nil {
+		return WritePlan{}, err
+	}
+	return WritePlan{
+		Action:      "create",
+		Kind:        subKind,
+		ParentKind:  parentKind,
+		ParentSlug:  parentSlug,
+		Slug:        p.rec.Slug,
+		Path:        s.relPath(p.rec.Path),
+		Frontmatter: frontmatterOnly(p.rec.Fields),
+		Body:        p.rec.Body,
+	}, nil
+}
+
+type preparedSubFileCreate struct {
+	sub schema.SubFile
+	rec SubFileRecord
+}
+
+func (s *Store) prepareSubFileCreate(ctx context.Context, parentKind, parentSlug, subKind string, input map[string]any) (preparedSubFileCreate, error) {
+	if err := ctxErr(ctx); err != nil {
+		return preparedSubFileCreate{}, err
 	}
 	entity, sub, err := s.resolveSubFile(parentKind, subKind)
 	if err != nil {
-		return SubFileRecord{}, err
+		return preparedSubFileCreate{}, err
 	}
 	parentDir := filepath.Join(s.root, entity.Dir, parentSlug)
 	if _, err := os.Stat(parentDir); err != nil {
 		if os.IsNotExist(err) {
-			return SubFileRecord{}, fmt.Errorf("%s/%s: %w", parentKind, parentSlug, model.ErrNotFound)
+			return preparedSubFileCreate{}, fmt.Errorf("%s/%s: %w", parentKind, parentSlug, model.ErrNotFound)
 		}
-		return SubFileRecord{}, fmt.Errorf("stat parent %s: %w", parentDir, err)
+		return preparedSubFileCreate{}, fmt.Errorf("stat parent %s: %w", parentDir, err)
 	}
 
 	rec := cloneMap(input)
 	applySubFileDefaults(sub, rec)
 	if err := validateSubFileRequired(parentKind, subKind, sub, rec); err != nil {
-		return SubFileRecord{}, err
+		return preparedSubFileCreate{}, err
 	}
 	if err := validateSubFileEnums(parentKind, subKind, sub, rec); err != nil {
-		return SubFileRecord{}, err
+		return preparedSubFileCreate{}, err
 	}
 
 	body, _ := rec[bodyKey].(string)
 	delete(rec, bodyKey)
 
 	if sub.Slug == "" {
-		return SubFileRecord{}, fmt.Errorf("sub-file %q has no slug template", subKind)
+		return preparedSubFileCreate{}, fmt.Errorf("sub-file %q has no slug template", subKind)
 	}
 	rendered, err := schema.Render(sub.Slug, rec)
 	if err != nil {
-		return SubFileRecord{}, fmt.Errorf("render slug: %w", err)
+		return preparedSubFileCreate{}, fmt.Errorf("render slug: %w", err)
 	}
 	baseSlug := Slugify(rendered)
 	if baseSlug == "" {
-		return SubFileRecord{}, fmt.Errorf("empty slug from %q: %w", sub.Slug, model.ErrValidation)
+		return preparedSubFileCreate{}, fmt.Errorf("empty slug from %q: %w", sub.Slug, model.ErrValidation)
 	}
 	dir := filepath.Join(parentDir, sub.Dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return SubFileRecord{}, fmt.Errorf("mkdir %s: %w", dir, err)
-	}
 	slug, err := EnsureUnique(dir, baseSlug)
 	if err != nil {
-		return SubFileRecord{}, err
-	}
-	path := filepath.Join(dir, slug+".md")
-	if err := writeEntity(path, frontmatterOnly(rec), body); err != nil {
-		return SubFileRecord{}, err
+		return preparedSubFileCreate{}, err
 	}
 	rec["id"] = slug
 	out := SubFileRecord{
@@ -256,14 +290,11 @@ func (s *Store) CreateSubFile(ctx context.Context, parentKind, parentSlug, subKi
 		ParentKind: parentKind,
 		ParentSlug: parentSlug,
 		Slug:       slug,
-		Path:       path,
+		Path:       filepath.Join(dir, slug+".md"),
 		Fields:     rec,
 		Body:       body,
 	}
-	if err := s.indexSubFile(parentKind, parentSlug, sub, out); err != nil {
-		return SubFileRecord{}, err
-	}
-	return out, nil
+	return preparedSubFileCreate{sub: sub, rec: out}, nil
 }
 
 // indexSubFile is a thin wrapper so create/update share one upsert
@@ -367,17 +398,61 @@ func (s *Store) ListSubFiles(ctx context.Context, parentKind, parentSlug, subKin
 // Update on the entity: nil values delete keys, everything else
 // overwrites; `body` is applied as the markdown body.
 func (s *Store) UpdateSubFile(ctx context.Context, parentKind, parentSlug, subKind, subSlug string, patch map[string]any) (SubFileRecord, error) {
-	if err := ctxErr(ctx); err != nil {
+	p, err := s.prepareSubFileUpdate(ctx, parentKind, parentSlug, subKind, subSlug, patch)
+	if err != nil {
 		return SubFileRecord{}, err
+	}
+	if err := writeEntity(p.rec.Path, frontmatterOnly(p.rec.Fields), p.rec.Body); err != nil {
+		return SubFileRecord{}, err
+	}
+	if err := s.indexSubFile(parentKind, parentSlug, p.sub, p.rec); err != nil {
+		return SubFileRecord{}, err
+	}
+	return p.rec, nil
+}
+
+// PlanUpdateSubFile describes what UpdateSubFile would change without
+// touching disk or the indexer.
+func (s *Store) PlanUpdateSubFile(ctx context.Context, parentKind, parentSlug, subKind, subSlug string, patch map[string]any) (WritePlan, error) {
+	p, err := s.prepareSubFileUpdate(ctx, parentKind, parentSlug, subKind, subSlug, patch)
+	if err != nil {
+		return WritePlan{}, err
+	}
+	return WritePlan{
+		Action:      "update",
+		Kind:        subKind,
+		ParentKind:  parentKind,
+		ParentSlug:  parentSlug,
+		Slug:        subSlug,
+		Path:        s.relPath(p.rec.Path),
+		Frontmatter: frontmatterOnly(p.rec.Fields),
+		Body:        p.rec.Body,
+		Before:      &PlanBefore{Frontmatter: p.beforeFront, Body: p.beforeBody},
+	}, nil
+}
+
+type preparedSubFileUpdate struct {
+	sub         schema.SubFile
+	rec         SubFileRecord
+	beforeFront map[string]any
+	beforeBody  string
+}
+
+func (s *Store) prepareSubFileUpdate(ctx context.Context, parentKind, parentSlug, subKind, subSlug string, patch map[string]any) (preparedSubFileUpdate, error) {
+	if err := ctxErr(ctx); err != nil {
+		return preparedSubFileUpdate{}, err
 	}
 	_, sub, err := s.resolveSubFile(parentKind, subKind)
 	if err != nil {
-		return SubFileRecord{}, err
+		return preparedSubFileUpdate{}, err
 	}
 	rec, err := s.GetSubFile(ctx, parentKind, parentSlug, subKind, subSlug)
 	if err != nil {
-		return SubFileRecord{}, err
+		return preparedSubFileUpdate{}, err
 	}
+	beforeBody := rec.Body
+	beforeFront := frontmatterOnly(rec.Fields)
+
 	for k, v := range patch {
 		if v == nil {
 			delete(rec.Fields, k)
@@ -386,47 +461,81 @@ func (s *Store) UpdateSubFile(ctx context.Context, parentKind, parentSlug, subKi
 		rec.Fields[k] = v
 	}
 	if err := validateSubFileEnums(parentKind, subKind, sub, rec.Fields); err != nil {
-		return SubFileRecord{}, err
+		return preparedSubFileUpdate{}, err
 	}
 	body, _ := rec.Fields[bodyKey].(string)
 	delete(rec.Fields, bodyKey)
 	if body == "" {
 		body = rec.Body
 	}
-	if err := writeEntity(rec.Path, frontmatterOnly(rec.Fields), body); err != nil {
-		return SubFileRecord{}, err
-	}
 	rec.Fields["id"] = subSlug
 	rec.Body = body
-	if err := s.indexSubFile(parentKind, parentSlug, sub, rec); err != nil {
-		return SubFileRecord{}, err
-	}
-	return rec, nil
+	return preparedSubFileUpdate{sub: sub, rec: rec, beforeFront: beforeFront, beforeBody: beforeBody}, nil
 }
 
 // DeleteSubFile removes the sub-file record. No soft-delete / archive —
 // sub-files are usually artifacts that don't need the audit trail.
 func (s *Store) DeleteSubFile(ctx context.Context, parentKind, parentSlug, subKind, subSlug string) error {
-	if err := ctxErr(ctx); err != nil {
-		return err
-	}
-	path, err := s.SubFilePath(parentKind, parentSlug, subKind, subSlug)
+	p, err := s.prepareSubFileDelete(ctx, parentKind, parentSlug, subKind, subSlug)
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("%s/%s/%s/%s: %w", parentKind, parentSlug, subKind, subSlug, model.ErrNotFound)
-		}
-		return fmt.Errorf("stat %s: %w", path, err)
-	}
-	if err := os.Remove(path); err != nil {
-		return fmt.Errorf("remove %s: %w", path, err)
+	if err := os.Remove(p.path); err != nil {
+		return fmt.Errorf("remove %s: %w", p.path, err)
 	}
 	if err := s.indexer.Remove(subFileDocID(parentKind, parentSlug, subKind, subSlug)); err != nil {
 		return fmt.Errorf("deindex sub-file: %w", err)
 	}
 	return nil
+}
+
+// PlanDeleteSubFile describes what DeleteSubFile would remove without
+// touching disk or the indexer.
+func (s *Store) PlanDeleteSubFile(ctx context.Context, parentKind, parentSlug, subKind, subSlug string) (WritePlan, error) {
+	p, err := s.prepareSubFileDelete(ctx, parentKind, parentSlug, subKind, subSlug)
+	if err != nil {
+		return WritePlan{}, err
+	}
+	return WritePlan{
+		Action:     "delete",
+		Kind:       subKind,
+		ParentKind: parentKind,
+		ParentSlug: parentSlug,
+		Slug:       subSlug,
+		Path:       s.relPath(p.path),
+		Before:     &PlanBefore{Frontmatter: p.beforeFront, Body: p.beforeBody},
+	}, nil
+}
+
+type preparedSubFileDelete struct {
+	path        string
+	beforeFront map[string]any
+	beforeBody  string
+}
+
+func (s *Store) prepareSubFileDelete(ctx context.Context, parentKind, parentSlug, subKind, subSlug string) (preparedSubFileDelete, error) {
+	if err := ctxErr(ctx); err != nil {
+		return preparedSubFileDelete{}, err
+	}
+	path, err := s.SubFilePath(parentKind, parentSlug, subKind, subSlug)
+	if err != nil {
+		return preparedSubFileDelete{}, err
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return preparedSubFileDelete{}, fmt.Errorf("%s/%s/%s/%s: %w", parentKind, parentSlug, subKind, subSlug, model.ErrNotFound)
+		}
+		return preparedSubFileDelete{}, fmt.Errorf("stat %s: %w", path, err)
+	}
+	rec, err := s.GetSubFile(ctx, parentKind, parentSlug, subKind, subSlug)
+	if err != nil {
+		return preparedSubFileDelete{}, err
+	}
+	return preparedSubFileDelete{
+		path:        path,
+		beforeFront: frontmatterOnly(rec.Fields),
+		beforeBody:  rec.Body,
+	}, nil
 }
 
 func applySubFileDefaults(sub schema.SubFile, rec map[string]any) {

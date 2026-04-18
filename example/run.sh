@@ -135,6 +135,19 @@ capture 50-tag-list.out                   --format json tag list
 capture 55-lint.out                       --format json lint
 capture 56-lint-quiet.out                 --quiet       lint
 
+# ── dry-run + field projection (commit 5) ───────────────────────────
+# Dry-run variants are captured BEFORE the real writes so disk state is
+# unchanged post-plan. Each plan is followed by a matching real command
+# later in the script (or already emitted above) so golden pairs stay in
+# sync.
+capture 57-person-add-dry.out      --format json person add --name "Carol Lin" --email carol@example.com --role ic --dry-run
+capture 58-project-update-dry.out  --format json project update launch-site --stage draft --dry-run
+capture 59-meeting-delete-dry.out  --format json project meeting delete launch-site 2026-04-08-copy-review --dry-run
+
+# Field projection — JSON object carries only the named keys.
+capture 63-project-list-fields.out --format json project list --fields id,name,stage
+capture 64-meeting-list-fields.out --format json project meeting list launch-site --fields subject
+
 # ── archive ──────────────────────────────────────────────────────────
 capture 60-person-archive.out             person archive bob-quinn
 capture 61-person-list-after-archive.out  --format json person list

@@ -5,6 +5,7 @@ Usage:
 
 Flags:
       --body string    markdown body
+      --dry-run        preview without writing
   -h, --help           help for add
       --lead string    person slug
       --name string    required

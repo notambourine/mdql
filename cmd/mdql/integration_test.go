@@ -944,6 +944,208 @@ func TestSearchTypeDisjunction(t *testing.T) {
 	}
 }
 
+// TestDryRunCreateNoWrites pins the core --dry-run promise: no file is
+// written and no index entry is created. The plan is emitted on stdout
+// with the full {action, path, frontmatter, body} shape so agents can
+// plan-then-execute.
+func TestDryRunCreateNoWrites(t *testing.T) {
+	root := initStore(t)
+	r := mustRun(t, root, "--format", "json", "person", "add",
+		"--name", "Jane Smith", "--email", "jane@x", "--dry-run")
+
+	var plan map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &plan); err != nil {
+		t.Fatalf("parse plan: %v\n%s", err, r.stdout)
+	}
+	if plan["action"] != "create" {
+		t.Errorf("action = %v, want create", plan["action"])
+	}
+	if plan["slug"] != "jane-smith" {
+		t.Errorf("slug = %v, want jane-smith", plan["slug"])
+	}
+	if got := fmt.Sprint(plan["path"]); got != filepath.Join("people", "jane-smith", "index.md") {
+		t.Errorf("path = %s", got)
+	}
+
+	// disk untouched
+	if _, err := os.Stat(filepath.Join(root, "people", "jane-smith")); !os.IsNotExist(err) {
+		t.Errorf("folder should not exist after --dry-run, stat err = %v", err)
+	}
+
+	// subsequent real create must succeed (nothing reserved)
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "jane@x")
+}
+
+// TestDryRunUpdateIncludesBefore asserts the update plan carries a
+// before snapshot alongside the would-be frontmatter.
+func TestDryRunUpdateIncludesBefore(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "jane@x")
+
+	r := mustRun(t, root, "--format", "json", "person", "update", "jane-smith",
+		"--email", "jane@y", "--dry-run")
+	var plan map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &plan); err != nil {
+		t.Fatalf("parse plan: %v\n%s", err, r.stdout)
+	}
+	before, ok := plan["before"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing before block: %s", r.stdout)
+	}
+	beforeFront := before["frontmatter"].(map[string]any)
+	if beforeFront["email"] != "jane@x" {
+		t.Errorf("before.email = %v, want jane@x", beforeFront["email"])
+	}
+	after := plan["frontmatter"].(map[string]any)
+	if after["email"] != "jane@y" {
+		t.Errorf("frontmatter.email = %v, want jane@y", after["email"])
+	}
+
+	// disk still reflects the original
+	got := mustRun(t, root, "--format", "json", "person", "show", "jane-smith").stdout
+	var rec map[string]any
+	_ = json.Unmarshal([]byte(got), &rec)
+	if rec["email"] != "jane@x" {
+		t.Errorf("live email = %v, want jane@x (unchanged)", rec["email"])
+	}
+}
+
+// TestDryRunArchiveKeepsFiles verifies that archive --dry-run doesn't
+// move the entity folder or reindex.
+func TestDryRunArchiveKeepsFiles(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "jane@x")
+
+	r := mustRun(t, root, "--format", "json", "person", "archive", "jane-smith", "--dry-run")
+	var plan map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &plan); err != nil {
+		t.Fatalf("parse plan: %v\n%s", err, r.stdout)
+	}
+	if plan["action"] != "archive" {
+		t.Errorf("action = %v, want archive", plan["action"])
+	}
+	if plan["to_path"] == nil {
+		t.Errorf("archive plan missing to_path: %s", r.stdout)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, "people", "jane-smith", "index.md")); err != nil {
+		t.Errorf("live folder gone after --dry-run: %v", err)
+	}
+}
+
+// TestDryRunSubFileLifecycle exercises sub-file add/update/delete dry-
+// run outputs. The create path crosses the commit-4 indexSubFile
+// wrapper, which dry-run must bypass.
+func TestDryRunSubFileLifecycle(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site")
+
+	r := mustRun(t, root, "--format", "json", "project", "meeting", "add", "launch-site",
+		"--subject", "kickoff", "--date", "2026-04-17", "--dry-run")
+	var plan map[string]any
+	_ = json.Unmarshal([]byte(r.stdout), &plan)
+	if plan["action"] != "create" || plan["kind"] != "meeting" {
+		t.Errorf("sub-file create plan wrong: %v", plan)
+	}
+	if plan["parent_slug"] != "launch-site" {
+		t.Errorf("parent_slug = %v, want launch-site", plan["parent_slug"])
+	}
+	if _, err := os.Stat(filepath.Join(root, "projects", "launch-site", "meetings")); !os.IsNotExist(err) {
+		t.Errorf("meeting folder exists after --dry-run: %v", err)
+	}
+
+	// Actually create one to exercise update/delete plan.
+	mustRun(t, root, "project", "meeting", "add", "launch-site",
+		"--subject", "kickoff", "--date", "2026-04-17")
+	meetingPath := filepath.Join(root, "projects", "launch-site", "meetings", "2026-04-17-kickoff.md")
+	info, err := os.Stat(meetingPath)
+	if err != nil {
+		t.Fatalf("meeting not created: %v", err)
+	}
+	origMtime := info.ModTime()
+
+	r = mustRun(t, root, "--format", "json", "project", "meeting", "delete", "launch-site",
+		"2026-04-17-kickoff", "--dry-run")
+	_ = json.Unmarshal([]byte(r.stdout), &plan)
+	if plan["action"] != "delete" {
+		t.Errorf("delete plan wrong: %v", plan)
+	}
+	info2, err := os.Stat(meetingPath)
+	if err != nil {
+		t.Fatalf("meeting removed by --dry-run delete: %v", err)
+	}
+	if !info2.ModTime().Equal(origMtime) {
+		t.Errorf("meeting mtime changed under --dry-run delete")
+	}
+}
+
+// TestFieldsProjectionJSON asserts that --fields projects to the
+// requested subset and preserves their order as a set (keys only).
+func TestFieldsProjectionJSON(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "person", "add", "--name", "Jane Smith", "--email", "jane@x", "--role", "lead")
+	mustRun(t, root, "person", "add", "--name", "Bob Quinn", "--email", "bob@x")
+
+	r := mustRun(t, root, "--format", "json", "person", "list", "--fields", "id,role")
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &rows); err != nil {
+		t.Fatalf("parse: %v\n%s", err, r.stdout)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	for _, row := range rows {
+		if _, has := row["name"]; has {
+			t.Errorf("projected row should not carry name: %v", row)
+		}
+		if _, has := row["id"]; !has {
+			t.Errorf("projected row missing id: %v", row)
+		}
+		if _, has := row["role"]; !has {
+			t.Errorf("projected row missing role: %v", row)
+		}
+	}
+}
+
+// TestFieldsRejectsUnknown pins the validation-before-store-open
+// promise: an unknown --fields value exits non-zero without spinning
+// up bleve.
+func TestFieldsRejectsUnknown(t *testing.T) {
+	root := initStore(t)
+	r := run(t, root, "person", "list", "--fields", "id,bogus")
+	if r.exitCode == 0 {
+		t.Fatalf("expected non-zero exit, got 0\nstdout: %s\nstderr: %s", r.stdout, r.stderr)
+	}
+	if !strings.Contains(r.stderr, "bogus") && !strings.Contains(r.stdout, "bogus") {
+		t.Errorf("error should mention the unknown field: stderr=%s stdout=%s", r.stderr, r.stdout)
+	}
+}
+
+// TestFieldsProjectionSubFile covers --fields on a sub-file list so the
+// projection wiring stays consistent across the two command trees.
+func TestFieldsProjectionSubFile(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site")
+	mustRun(t, root, "project", "meeting", "add", "launch-site",
+		"--subject", "kickoff", "--date", "2026-04-17")
+
+	r := mustRun(t, root, "--format", "json", "project", "meeting", "list", "launch-site",
+		"--fields", "subject")
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &rows); err != nil {
+		t.Fatalf("parse: %v\n%s", err, r.stdout)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d, want 1: %s", len(rows), r.stdout)
+	}
+	if rows[0]["subject"] != "kickoff" {
+		t.Errorf("subject = %v", rows[0]["subject"])
+	}
+	if _, has := rows[0]["date"]; has {
+		t.Errorf("date should be projected out: %v", rows[0])
+	}
+}
+
 // assertGoldenEqual compares two record lists field-by-field for the
 // keys present in want. Extra keys in got (e.g. optional fields) are
 // ignored so the golden doesn't have to enumerate every schema field.
