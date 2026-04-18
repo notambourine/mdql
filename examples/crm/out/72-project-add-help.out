@@ -4,12 +4,13 @@ Usage:
   mdql project add [flags]
 
 Flags:
-      --body string    markdown body
-      --dry-run        preview without writing
-  -h, --help           help for add
-      --lead string    person slug
-      --name string    required
-      --stage string   draft|active|done
+      --body string        markdown body
+      --body-file string   read body from file ('-' for stdin)
+      --dry-run            preview without writing
+  -h, --help               help for add
+      --lead string        person slug
+      --name string        required
+      --stage string       draft|active|done
       --tags strings
 
 Global Flags:

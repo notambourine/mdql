@@ -1173,3 +1173,125 @@ func sortedKeys(m map[string]any) []string {
 	sort.Strings(out)
 	return out
 }
+
+// runStdin invokes mdql with args and pipes stdin to its standard
+// input. Mirrors run() but exists so the body-file/stdin test path
+// doesn't need its own one-off harness.
+func runStdin(t *testing.T, root, stdin string, args ...string) runResult {
+	t.Helper()
+	full := append(
+		[]string{"--root", root, "--schema", filepath.Join(root, "schema.yml")},
+		args...,
+	)
+	cmd := exec.Command(mdqlBinary, full...)
+	cmd.Stdin = strings.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitCode := 0
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			exitCode = ee.ExitCode()
+		} else {
+			t.Fatalf("run %v: %v", args, err)
+		}
+	}
+	return runResult{stdout: stdout.String(), stderr: stderr.String(), exitCode: exitCode}
+}
+
+// TestBodyFileFromPath pins the --body-file <path> ingest path: the
+// agent dumps email/transcript content from an MCP tool to a temp
+// file, mdql reads the bytes verbatim into the markdown body. The
+// content includes characters that would tank inline --body shell
+// quoting (backticks, single quotes, newlines, code fences).
+func TestBodyFileFromPath(t *testing.T) {
+	root := initStore(t)
+	tmp := filepath.Join(t.TempDir(), "email.md")
+	body := "From: david@x\nSubject: budget question\n\n```\nLine with `backticks` and 'quotes'\n```\nFollow-up: [[launch-site]]\n"
+	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
+		t.Fatalf("write tmp body: %v", err)
+	}
+	mustRun(t, root, "project", "add", "--name", "Launch Site", "--body-file", tmp)
+
+	written, err := os.ReadFile(filepath.Join(root, "projects", "launch-site", "index.md"))
+	if err != nil {
+		t.Fatalf("read written file: %v", err)
+	}
+	if !strings.Contains(string(written), body) {
+		t.Errorf("body-file content not preserved verbatim.\nfile:\n%s\nwant body:\n%s", written, body)
+	}
+}
+
+// TestBodyFileFromStdin pins the `--body-file -` path: pipe granola
+// transcript / email body via stdin without staging a temp file.
+func TestBodyFileFromStdin(t *testing.T) {
+	root := initStore(t)
+	body := "transcript:\n- speaker: tom\n  text: \"shipped the body-file flag\"\n"
+	r := runStdin(t, root, body, "project", "add", "--name", "Launch Site", "--body-file", "-")
+	if r.exitCode != 0 {
+		t.Fatalf("stdin add: exit %d\nstderr: %s", r.exitCode, r.stderr)
+	}
+
+	written, err := os.ReadFile(filepath.Join(root, "projects", "launch-site", "index.md"))
+	if err != nil {
+		t.Fatalf("read written file: %v", err)
+	}
+	if !strings.Contains(string(written), body) {
+		t.Errorf("stdin body not preserved verbatim.\nfile:\n%s\nwant body:\n%s", written, body)
+	}
+}
+
+// TestBodyAndBodyFileMutuallyExclusive confirms cobra's mutual-
+// exclusion guard: passing both --body and --body-file must fail
+// with non-zero exit before any write happens.
+func TestBodyAndBodyFileMutuallyExclusive(t *testing.T) {
+	root := initStore(t)
+	tmp := filepath.Join(t.TempDir(), "x.md")
+	if err := os.WriteFile(tmp, []byte("file body"), 0o644); err != nil {
+		t.Fatalf("write tmp: %v", err)
+	}
+	r := run(t, root, "project", "add", "--name", "Launch Site",
+		"--body", "inline body", "--body-file", tmp)
+	if r.exitCode == 0 {
+		t.Errorf("expected non-zero exit when both flags set; got stdout: %s", r.stdout)
+	}
+}
+
+// TestBodyFileMissingErrors confirms a useful error when the path
+// doesn't exist — agents need a clear signal vs. a silent empty body.
+func TestBodyFileMissingErrors(t *testing.T) {
+	root := initStore(t)
+	r := run(t, root, "project", "add", "--name", "Launch Site",
+		"--body-file", "/no/such/path.md")
+	if r.exitCode == 0 {
+		t.Errorf("expected non-zero exit on missing body-file path")
+	}
+	if !strings.Contains(r.stderr, "body file") && !strings.Contains(r.stderr, "no/such/path.md") {
+		t.Errorf("stderr should mention the missing path; got: %s", r.stderr)
+	}
+}
+
+// TestBodyFileSubFile pins the same flag wiring on the sub-file path,
+// since subfile.go has its own collect call site.
+func TestBodyFileSubFile(t *testing.T) {
+	root := initStore(t)
+	mustRun(t, root, "project", "add", "--name", "Launch Site")
+	tmp := filepath.Join(t.TempDir(), "meeting.md")
+	body := "## Notes\n\nLong-form transcript with `code` and 'quotes'.\n"
+	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
+		t.Fatalf("write tmp: %v", err)
+	}
+	mustRun(t, root, "project", "meeting", "add", "launch-site",
+		"--subject", "kickoff", "--date", "2026-04-18", "--body-file", tmp)
+
+	written, err := os.ReadFile(filepath.Join(root,
+		"projects", "launch-site", "meetings", "2026-04-18-kickoff.md"))
+	if err != nil {
+		t.Fatalf("read sub-file: %v", err)
+	}
+	if !strings.Contains(string(written), body) {
+		t.Errorf("sub-file body-file content not preserved verbatim.\nfile:\n%s", written)
+	}
+}

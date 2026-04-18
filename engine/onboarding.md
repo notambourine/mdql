@@ -148,6 +148,24 @@ Write verbs (`add`, `update`, `delete`) accept `--dry-run` and return a
 
 `before` is absent on `add`. Paths are root-relative.
 
+## Body input: inline, file, or stdin
+
+Every write that accepts `--body` also accepts `--body-file <path>`
+(use `-` for stdin). The two flags are mutually exclusive. Use a file
+or stdin for any body that contains newlines, backticks, or quotes —
+inline shell quoting fails on email bodies and transcripts.
+
+```sh
+# email body fetched via MCP, dumped to disk first
+mdql project meeting add launch-site \
+  --subject "review" --date 2026-04-18 --body-file /tmp/email.md
+
+# transcript piped from another tool
+my-transcript-tool --id abc | \
+  mdql project meeting add launch-site \
+  --subject kickoff --date 2026-04-18 --body-file -
+```
+
 ## Session-entry payload for agents
 
 Run once at the start of any mdql session:

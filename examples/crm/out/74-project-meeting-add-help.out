@@ -4,11 +4,12 @@ Usage:
   mdql project meeting add <parent-slug> [flags]
 
 Flags:
-      --body string      markdown body
-      --date string      required
-      --dry-run          preview without writing
-  -h, --help             help for add
-      --subject string   required
+      --body string        markdown body
+      --body-file string   read body from file ('-' for stdin)
+      --date string        required
+      --dry-run            preview without writing
+  -h, --help               help for add
+      --subject string     required
 
 Global Flags:
   -f, --format string   output: table|json|csv|tsv

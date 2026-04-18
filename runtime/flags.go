@@ -6,6 +6,9 @@
 package runtime
 
 import (
+	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -25,12 +28,15 @@ type fieldFlag struct {
 	slice *[]string
 }
 
-// flagBindings holds the per-entity flag pointers plus the body
-// pointer. After RunE, Collect() walks the map and returns only the
-// fields the user actually touched.
+// flagBindings holds the per-entity flag pointers plus the body and
+// body-file pointers. After RunE, collect() walks the map and returns
+// only the fields the user actually touched. --body-file accepts a
+// path or "-" for stdin; resolved lazily inside collect so I/O errors
+// surface to the user, not to flag parsing.
 type flagBindings struct {
-	fields map[string]*fieldFlag
-	body   *string
+	fields   map[string]*fieldFlag
+	body     *string
+	bodyFile *string
 }
 
 // registerFieldFlags adds one cobra flag per schema field to cmd.
@@ -44,6 +50,10 @@ func registerFieldFlags(cmd *cobra.Command, entity schema.Entity, markRequired b
 	body := ""
 	fb.body = &body
 	cmd.Flags().StringVar(fb.body, "body", "", "markdown body")
+	bodyFile := ""
+	fb.bodyFile = &bodyFile
+	cmd.Flags().StringVar(fb.bodyFile, "body-file", "", "read body from file ('-' for stdin)")
+	cmd.MarkFlagsMutuallyExclusive("body", "body-file")
 
 	for name, field := range entity.Fields {
 		if field.Type == "relation[]" {
@@ -112,7 +122,7 @@ func fieldFlagDesc(name string, field schema.Field) string {
 // collect returns an input map containing only the flags the user set
 // plus body when it was set. Used by Update so we don't overwrite
 // fields that weren't touched.
-func (fb *flagBindings) collect(cmd *cobra.Command) map[string]any {
+func (fb *flagBindings) collect(cmd *cobra.Command) (map[string]any, error) {
 	out := map[string]any{}
 	for flagName, ff := range fb.fields {
 		if !cmd.Flags().Changed(flagName) {
@@ -120,15 +130,19 @@ func (fb *flagBindings) collect(cmd *cobra.Command) map[string]any {
 		}
 		out[ff.name] = ff.value()
 	}
-	if cmd.Flags().Changed("body") {
-		out["body"] = *fb.body
+	body, ok, err := fb.resolveBody(cmd)
+	if err != nil {
+		return nil, err
 	}
-	return out
+	if ok {
+		out["body"] = body
+	}
+	return out, nil
 }
 
 // collectAll returns every flag's value regardless of whether it was
 // changed. Used by Create — schema defaults fill in anything unset.
-func (fb *flagBindings) collectAll(cmd *cobra.Command) map[string]any {
+func (fb *flagBindings) collectAll(cmd *cobra.Command) (map[string]any, error) {
 	out := map[string]any{}
 	for flagName, ff := range fb.fields {
 		if !cmd.Flags().Changed(flagName) {
@@ -136,10 +150,50 @@ func (fb *flagBindings) collectAll(cmd *cobra.Command) map[string]any {
 		}
 		out[ff.name] = ff.value()
 	}
-	if *fb.body != "" {
-		out["body"] = *fb.body
+	body, ok, err := fb.resolveBody(cmd)
+	if err != nil {
+		return nil, err
 	}
-	return out
+	// Create-path keeps the original "drop empty body" behavior so
+	// schema defaults / templates aren't shadowed by an empty string.
+	if ok && body != "" {
+		out["body"] = body
+	}
+	return out, nil
+}
+
+// resolveBody picks the body source. Returns (body, set, err) where
+// set is true iff the user supplied --body or --body-file. Mutual
+// exclusion is enforced at flag-registration time, so at most one is
+// set here.
+func (fb *flagBindings) resolveBody(cmd *cobra.Command) (string, bool, error) {
+	if cmd.Flags().Changed("body-file") {
+		data, err := readBodySource(*fb.bodyFile)
+		if err != nil {
+			return "", false, err
+		}
+		return string(data), true, nil
+	}
+	if cmd.Flags().Changed("body") {
+		return *fb.body, true, nil
+	}
+	return "", false, nil
+}
+
+// readBodySource reads from path, or stdin when path == "-".
+func readBodySource(path string) ([]byte, error) {
+	if path == "-" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("read body from stdin: %w", err)
+		}
+		return data, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read body file %q: %w", path, err)
+	}
+	return data, nil
 }
 
 func (ff *fieldFlag) value() any {

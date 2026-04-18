@@ -130,7 +130,10 @@ func entityAddCmd(kind string, entity schema.Entity, cols []format.ColumnDef, op
 			return err
 		}
 		defer closer()
-		input := fb.collectAll(cmd)
+		input, err := fb.collectAll(cmd)
+		if err != nil {
+			return err
+		}
 		if dryRun {
 			plan, err := store.PlanCreate(cmd.Context(), kind, input)
 			if err != nil {
@@ -259,7 +262,10 @@ func entityUpdateCmd(kind string, entity schema.Entity, cols []format.ColumnDef,
 			return err
 		}
 		defer closer()
-		patch := fb.collect(cmd)
+		patch, err := fb.collect(cmd)
+		if err != nil {
+			return err
+		}
 		if dryRun {
 			plan, err := store.PlanUpdate(cmd.Context(), kind, args[0], patch)
 			if err != nil {

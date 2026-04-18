@@ -82,7 +82,10 @@ func subFileAddCmd(parentKind, subKind string, sub schema.SubFile, cols []format
 			return err
 		}
 		defer closer()
-		input := fb.collectAll(cmd)
+		input, err := fb.collectAll(cmd)
+		if err != nil {
+			return err
+		}
 		if dryRun {
 			plan, err := store.PlanCreateSubFile(cmd.Context(), parentKind, args[0], subKind, input)
 			if err != nil {
@@ -168,7 +171,10 @@ func subFileUpdateCmd(parentKind, subKind string, sub schema.SubFile, cols []for
 			return err
 		}
 		defer closer()
-		patch := fb.collect(cmd)
+		patch, err := fb.collect(cmd)
+		if err != nil {
+			return err
+		}
 		if dryRun {
 			plan, err := store.PlanUpdateSubFile(cmd.Context(), parentKind, args[0], subKind, args[1], patch)
 			if err != nil {

@@ -31,6 +31,7 @@ func TestPrintOnboarding(t *testing.T) {
 		"--dry-run",
 		"--fields",
 		"--sub",
+		"--body-file",
 		"wiki backlinks",
 		"wiki orphans",
 		"wiki dangling",
